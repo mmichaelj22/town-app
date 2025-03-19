@@ -21,20 +21,46 @@ class FriendsScreen extends StatelessWidget {
         .snapshots()
         .map((snapshot) {
       List<String> nearby = [];
+
+      // Find the current user document
+      DocumentSnapshot? currentUserDoc;
+      try {
+        currentUserDoc = snapshot.docs.firstWhere((d) => d.id == userId);
+      } catch (e) {
+        print("Current user not found in Firestore: $e");
+        return nearby; // Return empty list if user not found
+      }
+
+      // Check if the current user has latitude and longitude
+      if (!currentUserDoc.exists ||
+          !currentUserDoc.data().toString().contains('latitude') ||
+          !currentUserDoc.data().toString().contains('longitude')) {
+        print("Current user missing location data");
+        return nearby;
+      }
+
+      double userLat = currentUserDoc['latitude'] as double;
+      double userLon = currentUserDoc['longitude'] as double;
+
       snapshot.docs.forEach((doc) {
         if (doc.id != userId &&
-            doc['latitude'] != null &&
-            doc['longitude'] != null) {
-          double lat = doc['latitude'] as double;
-          double lon = doc['longitude'] as double;
-          double userLat =
-              snapshot.docs.firstWhere((d) => d.id == userId)['latitude'];
-          double userLon =
-              snapshot.docs.firstWhere((d) => d.id == userId)['longitude'];
-          double distance =
-              Geolocator.distanceBetween(userLat, userLon, lat, lon) * 3.28084;
-          if (distance <= radius) {
-            nearby.add(doc['name']);
+            doc.exists &&
+            doc.data().toString().contains('latitude') &&
+            doc.data().toString().contains('longitude') &&
+            doc.data().toString().contains('name')) {
+          try {
+            double lat = doc['latitude'] as double;
+            double lon = doc['longitude'] as double;
+            String name = doc['name'] as String;
+
+            double distance =
+                Geolocator.distanceBetween(userLat, userLon, lat, lon) *
+                    3.28084;
+            if (distance <= radius) {
+              nearby.add(name);
+            }
+          } catch (e) {
+            print("Error processing user ${doc.id}: $e");
           }
         }
       });
@@ -89,13 +115,28 @@ class FriendsScreen extends StatelessWidget {
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  List<String> friends =
-                      snapshot.data!.exists && snapshot.data!['friends'] != null
-                          ? List<String>.from(snapshot.data!['friends'])
-                          : []; // Default to empty list if 'friends' missing
+
+                  // Safely get the friends list
+                  List<String> friends = [];
+                  try {
+                    if (snapshot.data!.exists) {
+                      // Check if 'friends' field exists and is not null
+                      final data =
+                          snapshot.data!.data() as Map<String, dynamic>?;
+                      if (data != null &&
+                          data.containsKey('friends') &&
+                          data['friends'] != null) {
+                        friends = List<String>.from(data['friends']);
+                      }
+                    }
+                  } catch (e) {
+                    print("Error getting friends: $e");
+                  }
+
                   if (friends.isEmpty) {
                     return const Center(child: Text('No friends yet'));
                   }
+
                   return ListView.builder(
                     itemCount: friends.length,
                     itemBuilder: (context, index) {

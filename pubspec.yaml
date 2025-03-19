@@ -9,9 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  permission_handler: ^10.2.0  # Add this line (use the latest version)
   firebase_core: ^2.24.2
   cloud_firestore: ^4.13.6
-  firebase_auth: ^4.16.0
+  firebase_auth: ^4.19.0
   geolocator: ^10.1.0
   shared_preferences: ^2.2.2
   camera: ^0.10.5+5

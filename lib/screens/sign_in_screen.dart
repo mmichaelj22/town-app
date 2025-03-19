@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:camera/camera.dart'; // Add this import
 import 'register_screen.dart';
+import 'main_screen.dart';
 
 class SignInScreen extends StatelessWidget {
   final List<CameraDescription> cameras; // Add cameras parameter
@@ -15,14 +16,41 @@ class SignInScreen extends StatelessWidget {
 
     Future<void> _signIn() async {
       try {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
+        String email = _emailController.text.trim();
+        String password = _passwordController.text.trim();
+        if (email.isEmpty || !email.contains('@') || password.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Please enter a valid email and password')),
+          );
+          return;
+        }
+
+        print("Attempting sign-in with email: $email");
+        UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        print("Sign-in successful: ${userCredential.user?.uid}");
+        // Force navigation if sign-in succeeds
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainScreen()),
         );
       } catch (e) {
         print("Error signing in: $e");
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error: $e')));
+        // Check if user is signed in despite error
+        User? user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          print("User signed in despite error: ${user.uid}");
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const MainScreen()),
+          );
+        }
       }
     }
 
