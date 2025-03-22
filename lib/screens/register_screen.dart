@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:camera/camera.dart';
 import 'camera_screen.dart';
 import 'sign_in_screen.dart';
-import 'main_screen.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class RegisterScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -116,6 +116,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+// Update the _register method in register_screen.dart to upload the profile image
+
   Future<void> _register() async {
     try {
       String email = _emailController.text.trim();
@@ -195,19 +197,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ? email.split('@')[0]
             : 'User'; // Fallback to 'User' if split fails
 
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userCredential.user!.uid)
-            .set({
+        String userId = userCredential.user!.uid;
+
+        // Upload profile image to Firebase Storage
+        String? profileImageUrl;
+        try {
+          final storageRef = FirebaseStorage.instance
+              .ref()
+              .child('profile_images')
+              .child('$userId.jpg');
+
+          // Create the upload task
+          UploadTask uploadTask = storageRef.putFile(_profileImage!);
+
+          // Wait for the upload to complete
+          await uploadTask
+              .whenComplete(() => print("Registration image upload complete"));
+
+          // Get the download URL
+          profileImageUrl = await storageRef.getDownloadURL();
+          print("Profile image uploaded successfully, URL: $profileImageUrl");
+        } catch (e) {
+          print("Error uploading profile image during registration: $e");
+          // Continue with registration even if image upload fails
+        }
+
+        // Create user document in Firestore
+        await FirebaseFirestore.instance.collection('users').doc(userId).set({
           'name': name,
           'email': email,
-          'profileImage': 'pending',
+          'profileImageUrl': profileImageUrl ?? '',
+          'gender': 'Not specified',
+          'hometown': 'Not specified',
+          'bio': 'No bio yet.',
           'friends': [],
-          'latitude': 0.0, // Default values to prevent null errors
+          'latitude': 0.0,
           'longitude': 0.0,
         });
 
-        print("Registration successful for ${userCredential.user!.uid}");
+        print("Registration successful for $userId");
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Registration successful!')));
       }

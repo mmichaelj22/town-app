@@ -9,6 +9,7 @@ import 'friends_screen.dart';
 import 'settings_screen.dart';
 import 'new_private_chat_dialog.dart';
 import 'chat_screen.dart'; // Added import
+import 'profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -122,10 +123,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       MessagesScreen(userId: uid),
       HomeScreen(userId: uid, onJoinConversation: _joinConversation),
-      Scaffold(
-        appBar: AppBar(title: const Text('Profile')),
-        body: const Center(child: Text('Profile coming soon!')),
-      ),
+      const ProfileScreen(), // Your new Profile Screen
       SettingsScreen(
         detectionRadius: detectionRadius,
         onRadiusChanged: (value) async {

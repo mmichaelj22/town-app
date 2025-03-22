@@ -45,6 +45,47 @@ class HomeScreen extends StatelessWidget {
     return baseColor;
   }
 
+  String _formatTimestamp(DateTime time) {
+    final now = DateTime.now();
+    final difference = now.difference(time);
+
+    if (difference.inSeconds < 60) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      // Format as MM/DD for older messages
+      return '${time.month}/${time.day}';
+    }
+  }
+
+  Future<String> _getLastMessageTime(String chatTitle) async {
+    try {
+      final messages = await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(chatTitle)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+
+      if (messages.docs.isNotEmpty &&
+          messages.docs.first['timestamp'] != null) {
+        final timestamp = messages.docs.first['timestamp'] as Timestamp;
+        return _formatTimestamp(timestamp.toDate());
+      }
+    } catch (e) {
+      print("Error getting last message time: $e");
+    }
+
+    // Return a placeholder if we couldn't get the real timestamp
+    return '...';
+  }
+
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
@@ -98,7 +139,7 @@ class HomeScreen extends StatelessWidget {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'), // Fixed typo
+                      child: const Text('OK'),
                     ),
                   ],
                 ),
@@ -111,6 +152,7 @@ class HomeScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
         child: Row(
           children: [
+            // Private Chats Column
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(right: 8.0),
@@ -119,6 +161,11 @@ class HomeScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     Color color = _getSquareColor(
                         index, privateChats, communalSquareColors);
+                    String chatTitle = privateChats[index];
+                    String senderName = chatTitle.contains(" with ")
+                        ? chatTitle.split(" with ")[1]
+                        : chatTitle;
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),
                       child: GestureDetector(
@@ -139,6 +186,8 @@ class HomeScreen extends StatelessWidget {
                           height: squareSize,
                           decoration: BoxDecoration(
                             color: color,
+                            borderRadius:
+                                BorderRadius.circular(12), // Rounded corners
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.grey.withOpacity(0.5),
@@ -148,13 +197,87 @@ class HomeScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          child: Center(
-                            child: Text(
-                              privateChats[index],
-                              style: const TextStyle(
-                                  fontSize: 16, color: Colors.black),
-                              textAlign: TextAlign.center,
-                            ),
+                          child: Stack(
+                            children: [
+                              // Profile image in top left
+                              Positioned(
+                                top: 12,
+                                left: 12,
+                                child: CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: Colors.white70,
+                                  child: Text(
+                                    senderName.isNotEmpty
+                                        ? senderName[0].toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: color.computeLuminance() > 0.5
+                                          ? Colors.black87
+                                          : Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Sender name on the right
+                              Positioned(
+                                top: 20,
+                                left: 68,
+                                child: Text(
+                                  senderName,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: color.computeLuminance() > 0.5
+                                        ? Colors.black87
+                                        : Colors.white,
+                                  ),
+                                ),
+                              ),
+                              // Timestamp in top right
+                              Positioned(
+                                top: 20,
+                                right: 12,
+                                child: FutureBuilder<String>(
+                                    future: _getLastMessageTime(chatTitle),
+                                    builder: (context, snapshot) {
+                                      return Text(
+                                        snapshot.data ?? '...',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: color.computeLuminance() > 0.5
+                                              ? Colors.black54
+                                              : Colors.white70,
+                                        ),
+                                      );
+                                    }),
+                              ),
+                              // Message preview at the bottom
+                              Positioned(
+                                bottom: 12,
+                                left: 12,
+                                right: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    chatTitle.contains(" with ")
+                                        ? chatTitle.split(" with ")[0]
+                                        : "Tap to view",
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -163,6 +286,7 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ),
+            // Group Chats Column
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(left: 8.0),
@@ -170,6 +294,9 @@ class HomeScreen extends StatelessWidget {
                   itemCount: communalChats.length,
                   itemBuilder: (context, index) {
                     Color color = communalSquareColors[index];
+                    String groupName = communalChats[index];
+                    int participantCount = 3 + index; // Sample count for demo
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 16.0),
                       child: GestureDetector(
@@ -190,6 +317,8 @@ class HomeScreen extends StatelessWidget {
                           height: squareSize,
                           decoration: BoxDecoration(
                             color: color,
+                            borderRadius:
+                                BorderRadius.circular(12), // Rounded corners
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.grey.withOpacity(0.5),
@@ -199,13 +328,117 @@ class HomeScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          child: Center(
-                            child: Text(
-                              communalChats[index],
-                              style: const TextStyle(
-                                  fontSize: 16, color: Colors.black),
-                              textAlign: TextAlign.center,
-                            ),
+                          child: Stack(
+                            children: [
+                              // Stacked profile images in top left
+                              Positioned(
+                                top: 12,
+                                left: 12,
+                                child: SizedBox(
+                                  width: 58,
+                                  height: 48,
+                                  child: Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        child: CircleAvatar(
+                                          radius: 20,
+                                          backgroundColor: Colors.white70,
+                                          child: Text(
+                                            'A',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                                  color.computeLuminance() > 0.5
+                                                      ? Colors.black87
+                                                      : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        left: 16,
+                                        child: CircleAvatar(
+                                          radius: 20,
+                                          backgroundColor: Colors.white70,
+                                          child: Text(
+                                            'B',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                                  color.computeLuminance() > 0.5
+                                                      ? Colors.black87
+                                                      : Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // Participant count on the right
+                              Positioned(
+                                top: 20,
+                                left: 76,
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      '$participantCount participants',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: color.computeLuminance() > 0.5
+                                            ? Colors.black87
+                                            : Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Timestamp in top right
+                              Positioned(
+                                top: 20,
+                                right: 12,
+                                child: FutureBuilder<String>(
+                                    future: _getLastMessageTime(groupName),
+                                    builder: (context, snapshot) {
+                                      return Text(
+                                        snapshot.data ?? '...',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: color.computeLuminance() > 0.5
+                                              ? Colors.black54
+                                              : Colors.white70,
+                                        ),
+                                      );
+                                    }),
+                              ),
+                              // Group topic at the bottom
+                              Positioned(
+                                bottom: 12,
+                                left: 12,
+                                right: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    groupName,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

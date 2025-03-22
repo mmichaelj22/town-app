@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'chat_screen.dart';
 
 class NewPrivateChatDialog extends StatefulWidget {
   final String userId;

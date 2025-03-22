@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import 'new_private_chat_dialog.dart';
 
 class FriendsScreen extends StatelessWidget {
   final String userId;
