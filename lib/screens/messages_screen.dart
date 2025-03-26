@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
+import '../utils/conversation_manager.dart';
 import '../widgets/custom_header.dart';
 
 class MessagesScreen extends StatelessWidget {
@@ -31,19 +32,32 @@ class MessagesScreen extends StatelessWidget {
 
   void _createDummyConversation(BuildContext context) async {
     try {
+      // Get user location for origin
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (!userDoc.exists) {
+        throw Exception('User data not found');
+      }
+
+      final userData = userDoc.data() as Map<String, dynamic>;
+      final userLat = userData['latitude'] as double? ?? 0.0;
+      final userLon = userData['longitude'] as double? ?? 0.0;
+
       final String topic = "Test Conversation";
       final String type = "Private";
 
-      // Create a test conversation in Firestore
-      await FirebaseFirestore.instance
-          .collection('conversations')
-          .doc(topic)
-          .set({
-        'title': topic,
-        'type': type,
-        'participants': [userId],
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      // Create a test conversation with proper location information
+      await ConversationManager.createConversation(
+        title: topic,
+        type: type,
+        creatorId: userId,
+        initialParticipants: [userId],
+        latitude: userLat,
+        longitude: userLon,
+      );
 
       // Add a test message
       await FirebaseFirestore.instance
@@ -54,6 +68,7 @@ class MessagesScreen extends StatelessWidget {
         'text': 'This is a test message',
         'senderId': userId,
         'timestamp': FieldValue.serverTimestamp(),
+        'likes': [],
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -64,26 +79,6 @@ class MessagesScreen extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
-    }
-  }
-
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-
-    final now = DateTime.now();
-    final messageTime = timestamp.toDate();
-    final difference = now.difference(messageTime);
-
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${messageTime.month}/${messageTime.day}';
     }
   }
 
@@ -106,6 +101,26 @@ class MessagesScreen extends StatelessWidget {
     return 'No messages yet';
   }
 
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return '';
+
+    final now = DateTime.now();
+    final messageTime = timestamp.toDate();
+    final difference = now.difference(messageTime);
+
+    if (difference.inSeconds < 60) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${messageTime.month}/${messageTime.day}';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     print("Building MessagesScreen for user: $userId");
@@ -126,7 +141,7 @@ class MessagesScreen extends StatelessWidget {
             ],
           ),
 
-          // Message list
+          // Messages list
           SliverToBoxAdapter(
             child: Container(
               color: Colors.grey[100],
@@ -191,7 +206,60 @@ class MessagesScreen extends StatelessWidget {
                   }
 
                   print("Found ${snapshot.data!.docs.length} conversations");
-                  List<QueryDocumentSnapshot> docs = snapshot.data!.docs;
+
+                  // Filter conversations based on the visibility rule for Messages screen
+                  final List<QueryDocumentSnapshot> visibleConversations =
+                      snapshot.data!.docs.where((doc) {
+                    return ConversationManager.shouldShowOnMessagesScreen(
+                      userId: userId,
+                      conversation: doc,
+                    );
+                  }).toList();
+
+                  // Sort by most recent activity
+                  visibleConversations.sort((a, b) {
+                    final aLastActivity = a['lastActivity'] as Timestamp?;
+                    final bLastActivity = b['lastActivity'] as Timestamp?;
+
+                    if (aLastActivity == null && bLastActivity == null) {
+                      return 0;
+                    } else if (aLastActivity == null) {
+                      return 1;
+                    } else if (bLastActivity == null) {
+                      return -1;
+                    }
+
+                    return bLastActivity.compareTo(aLastActivity);
+                  });
+
+                  // If no visible conversations after filtering
+                  if (visibleConversations.isEmpty) {
+                    return SizedBox(
+                      height: MediaQuery.of(context).size.height - 120,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.message_outlined,
+                                size: 64, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'No active conversations',
+                              style:
+                                  TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Your conversations will appear here once you participate',
+                              style:
+                                  TextStyle(fontSize: 14, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
 
                   return FutureBuilder<List<String>>(
                     future: _getFriends(),
@@ -208,9 +276,9 @@ class MessagesScreen extends StatelessWidget {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(8),
-                        itemCount: docs.length,
+                        itemCount: visibleConversations.length,
                         itemBuilder: (context, index) {
-                          var doc = docs[index];
+                          var doc = visibleConversations[index];
                           String topic = doc['title'] ?? 'Unnamed';
                           String type = doc['type'] ?? 'Group';
                           List<dynamic> participants =

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
+import '../utils/conversation_manager.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -72,6 +73,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _sendMessage() {
     if (_messageController.text.isNotEmpty) {
       try {
+        // Add message to the conversation
         FirebaseFirestore.instance
             .collection('conversations')
             .doc(widget.chatTitle)
@@ -82,6 +84,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           'timestamp': FieldValue.serverTimestamp(),
           'likes': [], // Initialize empty likes array
         });
+
+        // Update conversation's last activity timestamp
+        ConversationManager.updateLastActivity(widget.chatTitle);
+
+        // Add user to participants if not already there
+        ConversationManager.addParticipant(widget.chatTitle, widget.userId);
+
         _messageController.clear();
         setState(() {
           _isComposing = false;
