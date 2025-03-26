@@ -7,6 +7,7 @@ import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/main_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'theme/app_theme.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -64,8 +65,9 @@ class TownApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Town',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: AppTheme.theme, // Use your custom theme
       home: AuthGate(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

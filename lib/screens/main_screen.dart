@@ -10,6 +10,7 @@ import 'settings_screen.dart';
 import 'new_private_chat_dialog.dart';
 import 'chat_screen.dart'; // Added import
 import 'profile_screen.dart';
+import '../theme/app_theme.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -91,6 +92,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     final String uid = userId!;
 
+    // Find this section in your main_screen.dart file
     final List<Widget> screens = [
       FriendsScreen(
         userId: uid,
@@ -107,7 +109,6 @@ class _MainScreenState extends State<MainScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (context) => ChatScreen(
-                        // Line ~107
                         userId: uid,
                         chatTitle: topic,
                         chatType: 'Private',
@@ -122,8 +123,12 @@ class _MainScreenState extends State<MainScreen> {
         },
       ),
       MessagesScreen(userId: uid),
-      HomeScreen(userId: uid, onJoinConversation: _joinConversation),
-      const ProfileScreen(), // Your new Profile Screen
+      HomeScreen(
+        userId: uid,
+        onJoinConversation: _joinConversation,
+        detectionRadius: detectionRadius, // Add this parameter
+      ),
+      const ProfileScreen(),
       SettingsScreen(
         detectionRadius: detectionRadius,
         onRadiusChanged: (value) async {
@@ -140,9 +145,9 @@ class _MainScreenState extends State<MainScreen> {
       body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: const Color(0xFF07004D),
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.white,
+        backgroundColor: AppTheme.navBarColor,
+        selectedItemColor: AppTheme.navBarItemColor,
+        unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Friends'),
           BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Messages'),

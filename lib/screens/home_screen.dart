@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../theme/app_theme.dart';
 import 'chat_screen.dart';
-import 'new_private_chat_dialog.dart';
+import 'conversation_starter.dart';
 
 class HomeScreen extends StatelessWidget {
   final String userId;
   final Function(String, String) onJoinConversation;
+  final double detectionRadius;
 
-  const HomeScreen(
-      {super.key, required this.userId, required this.onJoinConversation});
+  const HomeScreen({
+    super.key,
+    required this.userId,
+    required this.onJoinConversation,
+    required this.detectionRadius,
+  });
 
   final List<String> privateChats = const [
     'Coffee with Alice',
@@ -20,12 +26,8 @@ class HomeScreen extends StatelessWidget {
     'Local Events',
     'Neighborhood Watch',
   ];
-  final List<Color> squareColors = const [
-    Color(0xFFE072A4),
-    Color(0xFF6883BA),
-    Color(0xFFF9DC5C),
-    Color(0xFFB0E298),
-  ];
+
+  final List<Color> squareColors = AppTheme.squareColors;
 
   Color _getSquareColor(
       int index, List<String> chats, List<Color>? otherColumnColors) {
@@ -86,6 +88,57 @@ class HomeScreen extends StatelessWidget {
     return '...';
   }
 
+  void _handleCreateConversation(BuildContext context, String topic,
+      String type, List<String> recipients) async {
+    try {
+      // Create a title based on the type
+      String title = topic;
+      if (type == 'Private' && recipients.isNotEmpty) {
+        title = '$topic with ${recipients[0]}';
+      }
+
+      // Create conversation in Firestore
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(title)
+          .set({
+        'title': title,
+        'type': type,
+        'participants': [userId, ...recipients],
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Add initial message
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(title)
+          .collection('messages')
+          .add({
+        'text': type == 'Private' ? topic : 'Group created: $topic',
+        'senderId': userId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Navigate to new conversation
+      onJoinConversation(title, type);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            userId: userId,
+            chatTitle: title,
+            chatType: type,
+          ),
+        ),
+      );
+    } catch (e) {
+      print("Error creating conversation: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error creating conversation: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
@@ -99,356 +152,327 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.appBarColor,
         elevation: 4,
-        leading: IconButton(
-          icon: const Icon(Icons.add, color: Colors.black),
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (context) => NewPrivateChatDialog(
-                userId: userId,
-                onStartChat: (recipient, topic) {
-                  onJoinConversation(topic, 'Private');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatScreen(
-                        userId: userId,
-                        chatTitle: topic,
-                        chatType: 'Private',
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
+        // Remove leading action button
+        automaticallyImplyLeading: false,
+        title: Image.asset(
+          'assets/images/logo.png',
+          height: 50,
         ),
-        title: const Text('Town', style: TextStyle(color: Colors.black)),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.black),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('New Communal Chat'),
-                  content: const Text('Start a group chat (coming soon!)'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+        // Remove trailing action button
+        actions: [],
       ),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
-        child: Row(
-          children: [
-            // Private Chats Column
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: ListView.builder(
-                  itemCount: privateChats.length,
-                  itemBuilder: (context, index) {
-                    Color color = _getSquareColor(
-                        index, privateChats, communalSquareColors);
-                    String chatTitle = privateChats[index];
-                    String senderName = chatTitle.contains(" with ")
-                        ? chatTitle.split(" with ")[1]
-                        : chatTitle;
+      body: Column(
+        children: [
+          // Scrollable list of squares
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
+              child: Row(
+                children: [
+                  // Private Chats Column
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ListView.builder(
+                        itemCount: privateChats.length,
+                        itemBuilder: (context, index) {
+                          Color color = _getSquareColor(
+                              index, privateChats, communalSquareColors);
+                          String chatTitle = privateChats[index];
+                          String senderName = chatTitle.contains(" with ")
+                              ? chatTitle.split(" with ")[1]
+                              : chatTitle;
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: GestureDetector(
-                        onTap: () {
-                          onJoinConversation(privateChats[index], 'Private');
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ChatScreen(
-                                userId: userId,
-                                chatTitle: privateChats[index],
-                                chatType: 'Private',
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: squareSize,
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius:
-                                BorderRadius.circular(12), // Rounded corners
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.5),
-                                spreadRadius: 2,
-                                blurRadius: 5,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: Stack(
-                            children: [
-                              // Profile image in top left
-                              Positioned(
-                                top: 12,
-                                left: 12,
-                                child: CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: Colors.white70,
-                                  child: Text(
-                                    senderName.isNotEmpty
-                                        ? senderName[0].toUpperCase()
-                                        : '?',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: color.computeLuminance() > 0.5
-                                          ? Colors.black87
-                                          : Colors.white,
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: GestureDetector(
+                              onTap: () {
+                                onJoinConversation(
+                                    privateChats[index], 'Private');
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ChatScreen(
+                                      userId: userId,
+                                      chatTitle: privateChats[index],
+                                      chatType: 'Private',
                                     ),
                                   ),
-                                ),
-                              ),
-                              // Sender name on the right
-                              Positioned(
-                                top: 20,
-                                left: 68,
-                                child: Text(
-                                  senderName,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: color.computeLuminance() > 0.5
-                                        ? Colors.black87
-                                        : Colors.white,
-                                  ),
-                                ),
-                              ),
-                              // Timestamp in top right
-                              Positioned(
-                                top: 20,
-                                right: 12,
-                                child: FutureBuilder<String>(
-                                    future: _getLastMessageTime(chatTitle),
-                                    builder: (context, snapshot) {
-                                      return Text(
-                                        snapshot.data ?? '...',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: color.computeLuminance() > 0.5
-                                              ? Colors.black54
-                                              : Colors.white70,
-                                        ),
-                                      );
-                                    }),
-                              ),
-                              // Message preview at the bottom
-                              Positioned(
-                                bottom: 12,
-                                left: 12,
-                                right: 12,
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.7),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    chatTitle.contains(" with ")
-                                        ? chatTitle.split(" with ")[0]
-                                        : "Tap to view",
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black87,
+                                );
+                              },
+                              child: Container(
+                                height: squareSize,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(
+                                      12), // Rounded corners
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.5),
+                                      spreadRadius: 2,
+                                      blurRadius: 5,
+                                      offset: const Offset(0, 3),
                                     ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            // Group Chats Column
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0),
-                child: ListView.builder(
-                  itemCount: communalChats.length,
-                  itemBuilder: (context, index) {
-                    Color color = communalSquareColors[index];
-                    String groupName = communalChats[index];
-                    int participantCount = 3 + index; // Sample count for demo
+                                // Replace the private chat tile section in home_screen.dart
+// Look for the ListView.builder for privateChats and replace the Container's child Stack with this:
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: GestureDetector(
-                        onTap: () {
-                          onJoinConversation(communalChats[index], 'Group');
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ChatScreen(
-                                userId: userId,
-                                chatTitle: communalChats[index],
-                                chatType: 'Group',
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: squareSize,
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius:
-                                BorderRadius.circular(12), // Rounded corners
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.5),
-                                spreadRadius: 2,
-                                blurRadius: 5,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: Stack(
-                            children: [
-                              // Stacked profile images in top left
-                              Positioned(
-                                top: 12,
-                                left: 12,
-                                child: SizedBox(
-                                  width: 58,
-                                  height: 48,
-                                  child: Stack(
-                                    children: [
-                                      Positioned(
-                                        top: 0,
-                                        left: 0,
-                                        child: CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor: Colors.white70,
-                                          child: Text(
-                                            'A',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color:
-                                                  color.computeLuminance() > 0.5
-                                                      ? Colors.black87
-                                                      : Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 8,
-                                        left: 16,
-                                        child: CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor: Colors.white70,
-                                          child: Text(
-                                            'B',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color:
-                                                  color.computeLuminance() > 0.5
-                                                      ? Colors.black87
-                                                      : Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Participant count on the right
-                              Positioned(
-                                top: 20,
-                                left: 76,
-                                child: Row(
+                                child: Stack(
                                   children: [
-                                    Text(
-                                      '$participantCount participants',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: color.computeLuminance() > 0.5
-                                            ? Colors.black87
-                                            : Colors.white,
+                                    // Profile image in top left - LARGER SIZE
+                                    Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      child: CircleAvatar(
+                                        radius: 32, // Increased from 24
+                                        backgroundColor: Colors.white70,
+                                        child: Text(
+                                          senderName.isNotEmpty
+                                              ? senderName[0].toUpperCase()
+                                              : '?',
+                                          style: TextStyle(
+                                            fontSize: 26, // Increased from 22
+                                            fontWeight: FontWeight.bold,
+                                            color:
+                                                color.computeLuminance() > 0.5
+                                                    ? Colors.black87
+                                                    : Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    // Sender name on the right
+                                    Positioned(
+                                      top: 18,
+                                      left: 84, // Adjusted for larger avatar
+                                      child: Text(
+                                        senderName,
+                                        style: TextStyle(
+                                          fontSize: 18, // Increased from 16
+                                          fontWeight: FontWeight.bold,
+                                          color: color.computeLuminance() > 0.5
+                                              ? Colors.black87
+                                              : Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    // Timestamp moved below name
+                                    Positioned(
+                                      top: 42, // Below the name
+                                      left: 84, // Aligned with name
+                                      child: FutureBuilder<String>(
+                                          future:
+                                              _getLastMessageTime(chatTitle),
+                                          builder: (context, snapshot) {
+                                            return Text(
+                                              snapshot.data ?? '...',
+                                              style: TextStyle(
+                                                fontSize:
+                                                    13, // Slightly increased from 12
+                                                color:
+                                                    color.computeLuminance() >
+                                                            0.5
+                                                        ? Colors.black54
+                                                        : Colors.white70,
+                                              ),
+                                            );
+                                          }),
+                                    ),
+                                    // Message preview at the bottom - unchanged
+                                    Positioned(
+                                      bottom: 12,
+                                      left: 12,
+                                      right: 12,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.7),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          chatTitle.contains(" with ")
+                                              ? chatTitle.split(" with ")[0]
+                                              : "Tap to view",
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.black87,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              // Timestamp in top right
-                              Positioned(
-                                top: 20,
-                                right: 12,
-                                child: FutureBuilder<String>(
-                                    future: _getLastMessageTime(groupName),
-                                    builder: (context, snapshot) {
-                                      return Text(
-                                        snapshot.data ?? '...',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: color.computeLuminance() > 0.5
-                                              ? Colors.black54
-                                              : Colors.white70,
-                                        ),
-                                      );
-                                    }),
-                              ),
-                              // Group topic at the bottom
-                              Positioned(
-                                bottom: 12,
-                                left: 12,
-                                right: 12,
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.7),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    groupName,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black87,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  // Group Chats Column
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: ListView.builder(
+                        itemCount: communalChats.length,
+                        itemBuilder: (context, index) {
+                          Color color = communalSquareColors[index];
+                          String groupName = communalChats[index];
+                          int participantCount =
+                              3 + index; // Sample count for demo
+
+                          // Determine if this is a private or public group
+                          // For demo, let's make the first one private and others public
+                          String type = index == 0 ? 'Private Group' : 'Group';
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: GestureDetector(
+                              onTap: () {
+                                onJoinConversation(communalChats[index], type);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ChatScreen(
+                                      userId: userId,
+                                      chatTitle: communalChats[index],
+                                      chatType: type,
                                     ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
+                                );
+                              },
+                              child: Container(
+                                height: squareSize,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.5),
+                                      spreadRadius: 2,
+                                      blurRadius: 5,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Stack(
+                                  children: [
+                                    // Group topic at the top (moved from bottom)
+                                    Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      right: 12,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.85),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          groupName,
+                                          style: const TextStyle(
+                                            fontSize: 14, // Increased size
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black87,
+                                          ),
+                                          maxLines: 3, // Allow up to 3 lines
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Timestamp in top right - now outside the box
+                                    Positioned(
+                                      top: 15,
+                                      right: 22,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: color.computeLuminance() > 0.5
+                                              ? Colors.black.withOpacity(0.1)
+                                              : Colors.white.withOpacity(0.3),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: FutureBuilder<String>(
+                                            future:
+                                                _getLastMessageTime(groupName),
+                                            builder: (context, snapshot) {
+                                              return Text(
+                                                snapshot.data ?? '...',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                  color:
+                                                      color.computeLuminance() >
+                                                              0.5
+                                                          ? Colors.black54
+                                                          : Colors.white,
+                                                ),
+                                              );
+                                            }),
+                                      ),
+                                    ),
+
+                                    // Member count at the bottom with lock for private groups
+                                    Positioned(
+                                      bottom: 15,
+                                      left: 15,
+                                      child: Row(
+                                        children: [
+                                          // Lock emoji for private group
+                                          if (type == 'Private Group')
+                                            const Text(
+                                              "🔒 ",
+                                              style: TextStyle(fontSize: 16),
+                                            ),
+
+                                          Text(
+                                            '$participantCount members',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              color:
+                                                  color.computeLuminance() > 0.5
+                                                      ? Colors.black87
+                                                      : Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+
+          // Conversation starter component
+          ConversationStarter(
+            userId: userId,
+            detectionRadius: detectionRadius,
+            onCreateConversation: (topic, type, recipients) =>
+                _handleCreateConversation(context, topic, type, recipients),
+          ),
+        ],
       ),
     );
   }

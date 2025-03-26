@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../theme/app_theme.dart';
+import '../widgets/custom_header.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -68,182 +72,271 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        backgroundColor: Colors.white,
-        titleTextStyle: const TextStyle(color: Colors.black, fontSize: 20),
-        elevation: 4,
-      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Profile Image - Takes up about half the width
-                      Container(
-                        width: MediaQuery.of(context).size.width * 0.4,
-                        height: MediaQuery.of(context).size.width * 0.4,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.grey[300]!,
-                            width: 2,
+          : CustomScrollView(
+              slivers: [
+                // Custom gradient header
+                CustomHeader(
+                  title: 'Profile',
+                  subtitle: name,
+                  primaryColor: AppTheme.coral, // Using coral from theme
+                ),
+
+                // Profile content
+                SliverToBoxAdapter(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Profile image and basic info in a card
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.3),
-                              spreadRadius: 2,
-                              blurRadius: 5,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: profileImageUrl.isNotEmpty
-                              ? Image.network(
-                                  profileImageUrl,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder:
-                                      (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress
-                                                    .expectedTotalBytes !=
-                                                null
-                                            ? loadingProgress
-                                                    .cumulativeBytesLoaded /
-                                                loadingProgress
-                                                    .expectedTotalBytes!
-                                            : null,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              children: [
+                                // Profile Image
+                                Center(
+                                  child: Container(
+                                    width:
+                                        MediaQuery.of(context).size.width * 0.4,
+                                    height:
+                                        MediaQuery.of(context).size.width * 0.4,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: AppTheme.coral.withOpacity(0.5),
+                                        width: 4,
                                       ),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return const Icon(
-                                      Icons.person,
-                                      size: 80,
-                                      color: Colors.grey,
-                                    );
-                                  },
-                                )
-                              : const Icon(
-                                  Icons.person,
-                                  size: 80,
-                                  color: Colors.grey,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.grey.withOpacity(0.3),
+                                          spreadRadius: 2,
+                                          blurRadius: 5,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipOval(
+                                      child: profileImageUrl.isNotEmpty
+                                          ? Image.network(
+                                              profileImageUrl,
+                                              fit: BoxFit.cover,
+                                              loadingBuilder: (context, child,
+                                                  loadingProgress) {
+                                                if (loadingProgress == null)
+                                                  return child;
+                                                return Center(
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    value: loadingProgress
+                                                                .expectedTotalBytes !=
+                                                            null
+                                                        ? loadingProgress
+                                                                .cumulativeBytesLoaded /
+                                                            loadingProgress
+                                                                .expectedTotalBytes!
+                                                        : null,
+                                                  ),
+                                                );
+                                              },
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                return Container(
+                                                  color: AppTheme.coral
+                                                      .withOpacity(0.2),
+                                                  child: Center(
+                                                    child: Text(
+                                                      name.isNotEmpty
+                                                          ? name[0]
+                                                              .toUpperCase()
+                                                          : '?',
+                                                      style: TextStyle(
+                                                        fontSize: 60,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: AppTheme.coral,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : Container(
+                                              color: AppTheme.coral
+                                                  .withOpacity(0.2),
+                                              child: Center(
+                                                child: Text(
+                                                  name.isNotEmpty
+                                                      ? name[0].toUpperCase()
+                                                      : '?',
+                                                  style: TextStyle(
+                                                    fontSize: 60,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppTheme.coral,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                  ),
                                 ),
+
+                                const SizedBox(height: 16),
+
+                                // Name
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 8),
+
+                                // Bio
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    bio,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      height: 1.5,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 20),
-                      // User Info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
+
+                        const SizedBox(height: 20),
+
+                        // Personal Information Section
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Personal Information',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Divider(),
+                                _buildInfoItem(Icons.person, 'Gender', gender),
+                                _buildInfoItem(
+                                    Icons.location_city, 'Hometown', hometown),
+                                _buildInfoItem(
+                                    Icons.email,
+                                    'Email',
+                                    FirebaseAuth.instance.currentUser?.email ??
+                                        'Not available'),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Edit Profile Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => EditProfileScreen(
+                                    name: name,
+                                    gender: gender,
+                                    hometown: hometown,
+                                    bio: bio,
+                                    profileImageUrl: profileImageUrl,
+                                  ),
+                                ),
+                              );
+
+                              if (result == true) {
+                                // Profile was updated, reload data
+                                _loadUserProfile();
+                              }
+                            },
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Edit Profile'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              backgroundColor: AppTheme.coral,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            _buildInfoRow('Gender', gender),
-                            const SizedBox(height: 4),
-                            _buildInfoRow('Hometown', hometown),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'About Me',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      bio,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditProfileScreen(
-                              name: name,
-                              gender: gender,
-                              hometown: hometown,
-                              bio: bio,
-                              profileImageUrl: profileImageUrl,
-                            ),
                           ),
-                        );
-
-                        if (result == true) {
-                          // Profile was updated, reload data
-                          _loadUserProfile();
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: const Color(0xFF07004D),
-                      ),
-                      child: const Text(
-                        'Edit Profile',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$label: ',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[700],
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 16,
+  Widget _buildInfoItem(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppTheme.coral.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: Icon(icon, color: AppTheme.coral),
           ),
-        ),
-      ],
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
