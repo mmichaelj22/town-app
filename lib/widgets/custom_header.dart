@@ -14,7 +14,7 @@ class CustomHeader extends StatelessWidget {
     this.subtitle,
     required this.primaryColor,
     this.secondaryColor,
-    this.expandedHeight = 100.0,
+    this.expandedHeight = 50.0,
     this.actions,
   }) : super(key: key);
 
@@ -51,7 +51,7 @@ class CustomHeader extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 16,
                     color: Colors.white70,
                   ),
                 ),
@@ -63,7 +63,7 @@ class CustomHeader extends StatelessWidget {
             children: [
               // Decorative background elements
               Positioned(
-                right: -20,
+                right: -40,
                 top: -20,
                 child: Container(
                   width: 120,

@@ -17,76 +17,93 @@ class ConversationManager {
     required double userLat,
     required double userLon,
   }) async {
-    final data = conversation.data() as Map<String, dynamic>?;
-    if (data == null) return false;
-
-    // Get conversation details
-    final String type = data['type'] ?? 'Group';
-    final List<dynamic> participants = data['participants'] ?? [];
-    final GeoPoint? origin = data['origin'] as GeoPoint?;
-    final Timestamp? lastActivity = data['lastActivity'] as Timestamp?;
-    final Timestamp? createdAt = data['createdAt'] as Timestamp?;
-
-    // Rule 1: Private messages are only visible to participants
-    if (type == 'Private' || type == 'Private Group') {
-      return participants.contains(userId);
-    }
-
-    // Rule 2: Check if conversation has expired due to inactivity
-    if (lastActivity != null) {
-      final lastActiveTime = lastActivity.toDate();
-      final timeSinceActivity = DateTime.now().difference(lastActiveTime);
-
-      // If no response within expiry time, don't show
-      if (timeSinceActivity.inMinutes > conversationExpiryMinutes &&
-          participants.length <= 1) {
+    try {
+      final data = conversation.data() as Map<String, dynamic>?;
+      if (data == null) {
+        print("No data for conversation: ${conversation.id}");
         return false;
       }
-    } else if (createdAt != null) {
-      // If no activity recorded, use creation time
-      final creationTime = createdAt.toDate();
-      final timeSinceCreation = DateTime.now().difference(creationTime);
 
-      // If no response within expiry time, don't show
-      if (timeSinceCreation.inMinutes > conversationExpiryMinutes &&
-          participants.length <= 1) {
-        return false;
+      // Get conversation details safely
+      final String type = data['type'] as String? ?? 'Group';
+      print("Conversation type: $type");
+
+      final List<dynamic> participants = data['participants'] ?? [];
+      print("Participants: ${participants.length}");
+
+      final GeoPoint? origin = data['origin'] as GeoPoint?;
+      print("Has origin: ${origin != null}");
+
+      final Timestamp? lastActivity = data['lastActivity'] as Timestamp?;
+      print("Has lastActivity: ${lastActivity != null}");
+
+      final Timestamp? createdAt = data['createdAt'] as Timestamp?;
+      print("Has createdAt: ${createdAt != null}");
+
+      // Rule 1: Private messages are only visible to participants
+      if (type == 'Private' || type == 'Private Group') {
+        return participants.contains(userId);
       }
-    }
 
-    // Rule 3: Check if user has left the area
-    if (origin != null) {
-      // Calculate distance from conversation origin
-      final double distance = Geolocator.distanceBetween(
-              userLat, userLon, origin.latitude, origin.longitude) *
-          3.28084; // Convert to feet
+      // Rule 2: Check if conversation has expired due to inactivity
+      if (lastActivity != null) {
+        final lastActiveTime = lastActivity.toDate();
+        final timeSinceActivity = DateTime.now().difference(lastActiveTime);
 
-      // Check if user is outside detection radius
-      if (distance > detectionRadius) {
-        // If outside radius, check when user last was in the area
-        final Timestamp? userLastInArea =
-            data['userLastInArea_$userId'] as Timestamp?;
+        // If no response within expiry time, don't show
+        if (timeSinceActivity.inMinutes > conversationExpiryMinutes &&
+            participants.length <= 1) {
+          return false;
+        }
+      } else if (createdAt != null) {
+        // If no activity recorded, use creation time
+        final creationTime = createdAt.toDate();
+        final timeSinceCreation = DateTime.now().difference(creationTime);
 
-        if (userLastInArea != null) {
-          final lastInAreaTime = userLastInArea.toDate();
-          final timeSinceInArea = DateTime.now().difference(lastInAreaTime);
+        // If no response within expiry time, don't show
+        if (timeSinceCreation.inMinutes > conversationExpiryMinutes &&
+            participants.length <= 1) {
+          return false;
+        }
+      }
 
-          // If user left area more than expiry time ago, don't show
-          if (timeSinceInArea.inMinutes > locationExpiryMinutes) {
+      // Rule 3: Check if user has left the area
+      if (origin != null) {
+        // Calculate distance from conversation origin
+        final double distance = Geolocator.distanceBetween(
+                userLat, userLon, origin.latitude, origin.longitude) *
+            3.28084; // Convert to feet
+
+        // Check if user is outside detection radius
+        if (distance > detectionRadius) {
+          // If outside radius, check when user last was in the area
+          final Timestamp? userLastInArea =
+              data['userLastInArea_$userId'] as Timestamp?;
+
+          if (userLastInArea != null) {
+            final lastInAreaTime = userLastInArea.toDate();
+            final timeSinceInArea = DateTime.now().difference(lastInAreaTime);
+
+            // If user left area more than expiry time ago, don't show
+            if (timeSinceInArea.inMinutes > locationExpiryMinutes) {
+              return false;
+            }
+          } else {
+            // If no record of user being in area, don't show
             return false;
           }
         } else {
-          // If no record of user being in area, don't show
-          return false;
+          // User is in area, update the timestamp
+          await _updateUserLastInArea(conversation.id, userId);
         }
-      } else {
-        // User is in area, update the timestamp
-        await _updateUserLastInArea(conversation.id, userId);
       }
-    }
 
-    // Default: Show the conversation
-    return true;
+      // Default: Show the conversation
+      return true;
+    } catch (e) {
+      print("Error in shouldShowOnHomeScreen for ${conversation.id}: $e");
+      return false;
+    }
   }
 
   // Check if a conversation should be visible on the messages screen

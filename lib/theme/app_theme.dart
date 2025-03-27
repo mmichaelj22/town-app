@@ -20,13 +20,13 @@ class AppTheme {
   // White for app bar and navigation
   static const Color appBarColor = Colors.white;
   static const Color navBarColor = Colors.white;
-  static const Color navBarItemColor =
-      Color(0xFF07004D); // Dark blue from your bottom nav
+  static const Color navBarItemColor = blue; // Dark blue from your bottom nav
 
   // Theme data
   static ThemeData get theme {
     return ThemeData(
       primaryColor: appBarColor,
+      scaffoldBackgroundColor: Colors.white,
       appBarTheme: const AppBarTheme(
         backgroundColor: appBarColor,
         elevation: 4,
