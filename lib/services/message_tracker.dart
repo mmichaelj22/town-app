@@ -1,4 +1,5 @@
 // lib/services/message_tracker.dart
+
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,18 +18,24 @@ class MessageTracker {
   String? _currentUserId;
   StreamSubscription? _messagesSubscription;
   Map<String, Timestamp> _lastReadTimestamps = {};
+  bool _isDisposed = false;
 
   // Initialize with user ID
   Future<void> initialize(String userId) async {
     _currentUserId = userId;
+    _isDisposed = false; // Reset the disposed flag on initialization
     await _loadLastReadTimestamps();
+    await ensureConversationsHaveLastActivity();
     _startListening();
   }
 
   // Dispose resources
   void dispose() {
+    _isDisposed = true;
     _messagesSubscription?.cancel();
-    _unreadCountController.close();
+    if (!_unreadCountController.isClosed) {
+      _unreadCountController.close();
+    }
   }
 
   // Load last read timestamps from preferences
@@ -94,9 +101,83 @@ class MessageTracker {
     });
   }
 
+  // Add this method to ensure lastActivity field exists
+  Future<void> ensureConversationsHaveLastActivity() async {
+    if (_currentUserId == null) return;
+
+    try {
+      // Get all conversations user is part of
+      final conversations = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('participants', arrayContains: _currentUserId)
+          .get();
+
+      for (var conversation in conversations.docs) {
+        final conversationData = conversation.data();
+
+        // Check if lastActivity is missing
+        if (!conversationData.containsKey('lastActivity')) {
+          print(
+              "Adding missing lastActivity to conversation: ${conversation.id}");
+
+          // Get the most recent message to set as lastActivity
+          final messagesQuery = await FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(conversation.id)
+              .collection('messages')
+              .orderBy('timestamp', descending: true)
+              .limit(1)
+              .get();
+
+          if (messagesQuery.docs.isNotEmpty) {
+            final lastMessage = messagesQuery.docs.first;
+            final lastTimestamp = lastMessage['timestamp'] as Timestamp?;
+
+            if (lastTimestamp != null) {
+              // Update with the timestamp of the last message
+              await FirebaseFirestore.instance
+                  .collection('conversations')
+                  .doc(conversation.id)
+                  .update({
+                'lastActivity': lastTimestamp,
+              });
+            } else {
+              // No message timestamp, use current time
+              await FirebaseFirestore.instance
+                  .collection('conversations')
+                  .doc(conversation.id)
+                  .update({
+                'lastActivity': FieldValue.serverTimestamp(),
+              });
+            }
+          } else {
+            // No messages, use createdAt or current time
+            if (conversationData.containsKey('createdAt')) {
+              await FirebaseFirestore.instance
+                  .collection('conversations')
+                  .doc(conversation.id)
+                  .update({
+                'lastActivity': conversationData['createdAt'],
+              });
+            } else {
+              await FirebaseFirestore.instance
+                  .collection('conversations')
+                  .doc(conversation.id)
+                  .update({
+                'lastActivity': FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print("Error ensuring lastActivity exists: $e");
+    }
+  }
+
   // Count unread messages
   Future<void> _countUnreadMessages() async {
-    if (_currentUserId == null) return;
+    if (_currentUserId == null || _isDisposed) return;
 
     int totalUnread = 0;
 
@@ -113,21 +194,49 @@ class MessageTracker {
             _lastReadTimestamps[conversationId] ?? Timestamp(0, 0);
 
         // Get unread messages count
-        final messagesQuery = await FirebaseFirestore.instance
-            .collection('conversations')
-            .doc(conversationId)
-            .collection('messages')
-            .where('timestamp', isGreaterThan: lastReadTimestamp)
-            .where('senderId', isNotEqualTo: _currentUserId)
-            .get();
+        int unreadCount = 0;
+        try {
+          // Try with compound query first (requires index)
+          final messagesQuery = await FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(conversationId)
+              .collection('messages')
+              .where('timestamp', isGreaterThan: lastReadTimestamp)
+              .where('senderId', isNotEqualTo: _currentUserId)
+              .get();
 
-        totalUnread += messagesQuery.docs.length;
+          unreadCount = messagesQuery.docs.length;
+        } catch (e) {
+          // Fallback to manual filtering if index not ready
+          print(
+              "Using fallback count method for conversation $conversationId: $e");
+
+          final allMessages = await FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(conversationId)
+              .collection('messages')
+              .get();
+
+          unreadCount = allMessages.docs.where((doc) {
+            final timestamp = doc['timestamp'] as Timestamp?;
+            final senderId = doc['senderId'] as String?;
+
+            return timestamp != null &&
+                timestamp.compareTo(lastReadTimestamp) > 0 &&
+                senderId != null &&
+                senderId != _currentUserId;
+          }).length;
+        }
+
+        totalUnread += unreadCount;
       }
 
-      // Emit new count
-      _unreadCountController.add(totalUnread);
+      // Emit new count if controller is still open
+      if (!_isDisposed && !_unreadCountController.isClosed) {
+        _unreadCountController.add(totalUnread);
+      }
     } catch (e) {
-      print('Error counting unread messages: $e');
+      print("Error counting unread messages: $e");
     }
   }
 
@@ -135,8 +244,6 @@ class MessageTracker {
   Future<int> getUnreadCount() async {
     if (_currentUserId == null) return 0;
 
-    await _countUnreadMessages();
-
     int totalUnread = 0;
 
     try {
@@ -152,18 +259,44 @@ class MessageTracker {
             _lastReadTimestamps[conversationId] ?? Timestamp(0, 0);
 
         // Get unread messages count
-        final messagesQuery = await FirebaseFirestore.instance
-            .collection('conversations')
-            .doc(conversationId)
-            .collection('messages')
-            .where('timestamp', isGreaterThan: lastReadTimestamp)
-            .where('senderId', isNotEqualTo: _currentUserId)
-            .get();
+        int unreadCount = 0;
+        try {
+          // Try with compound query first (requires index)
+          final messagesQuery = await FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(conversationId)
+              .collection('messages')
+              .where('timestamp', isGreaterThan: lastReadTimestamp)
+              .where('senderId', isNotEqualTo: _currentUserId)
+              .get();
 
-        totalUnread += messagesQuery.docs.length;
+          unreadCount = messagesQuery.docs.length;
+        } catch (e) {
+          // Fallback to manual filtering if index not ready
+          print(
+              "Using fallback count method for conversation $conversationId: $e");
+
+          final allMessages = await FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(conversationId)
+              .collection('messages')
+              .get();
+
+          unreadCount = allMessages.docs.where((doc) {
+            final timestamp = doc['timestamp'] as Timestamp?;
+            final senderId = doc['senderId'] as String?;
+
+            return timestamp != null &&
+                timestamp.compareTo(lastReadTimestamp) > 0 &&
+                senderId != null &&
+                senderId != _currentUserId;
+          }).length;
+        }
+
+        totalUnread += unreadCount;
       }
     } catch (e) {
-      print('Error getting unread count: $e');
+      print("Error getting unread count: $e");
     }
 
     return totalUnread;

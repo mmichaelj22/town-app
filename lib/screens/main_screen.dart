@@ -8,9 +8,11 @@ import 'messages_screen.dart';
 import 'friends_screen.dart';
 import 'settings_screen.dart';
 import 'new_private_chat_dialog.dart';
-import 'chat_screen.dart'; // Added import
+import 'chat_screen.dart';
 import 'profile_screen.dart';
 import '../theme/app_theme.dart';
+import '../services/message_tracker.dart';
+import '../widgets/notification_badge.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -23,6 +25,8 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 2;
   String? userId;
   double detectionRadius = 100.0;
+  final MessageTracker _messageTracker = MessageTracker();
+  int _unreadMessageCount = 0;
 
   @override
   void initState() {
@@ -31,12 +35,35 @@ class _MainScreenState extends State<MainScreen> {
     _loadRadius();
   }
 
+  @override
+  void dispose() {
+    _messageTracker.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUser() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       setState(() {
         userId = user.uid;
       });
+
+      // Initialize message tracker
+      await _messageTracker.initialize(user.uid);
+
+      // Listen for unread message count updates
+      _messageTracker.unreadCountStream.listen((count) {
+        setState(() {
+          _unreadMessageCount = count;
+        });
+      });
+
+      // Get initial unread count
+      final initialCount = await _messageTracker.getUnreadCount();
+      setState(() {
+        _unreadMessageCount = initialCount;
+      });
+
       await _updateUserLocation(user.uid);
     }
   }
@@ -85,6 +112,15 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  // Method to mark messages as read when visiting Messages tab
+  void _markMessagesAsReadIfNeeded(int index) {
+    // If navigating to Messages tab (index 1)
+    if (index == 1) {
+      // We'll mark individual conversations as read in the Messages screen
+      // This is just a placeholder in case we want to add any logic here
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (userId == null) {
@@ -92,7 +128,11 @@ class _MainScreenState extends State<MainScreen> {
     }
     final String uid = userId!;
 
-    // Find this section in your main_screen.dart file
+// Fix for the main_screen.dart file
+
+// In the build method of _MainScreenState class, update the screens list
+// where the MessagesScreen is created (should be around line 170):
+
     final List<Widget> screens = [
       FriendsScreen(
         userId: uid,
@@ -122,15 +162,17 @@ class _MainScreenState extends State<MainScreen> {
           );
         },
       ),
-      MessagesScreen(userId: uid),
+      MessagesScreen(
+        userId: uid, // Make sure this line exists
+        messageTracker: _messageTracker,
+      ),
       HomeScreen(
         userId: uid,
         onJoinConversation: _joinConversation,
-        detectionRadius: detectionRadius, // Add this parameter
+        detectionRadius: detectionRadius,
       ),
       const ProfileScreen(),
       SettingsScreen(
-        userId: uid, // Add this line to pass the userId
         detectionRadius: detectionRadius,
         onRadiusChanged: (value) async {
           setState(() {
@@ -139,6 +181,7 @@ class _MainScreenState extends State<MainScreen> {
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setDouble('detectionRadius', value);
         },
+        userId: uid,
       ),
     ];
 
@@ -149,12 +192,34 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: AppTheme.navBarColor,
         selectedItemColor: AppTheme.navBarItemColor,
         unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Friends'),
-          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Messages'),
-          BottomNavigationBarItem(icon: Icon(Icons.square), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        items: [
+          const BottomNavigationBarItem(
+              icon: Icon(Icons.people), label: 'Friends'),
+
+          // Messages tab with notification badge
           BottomNavigationBarItem(
+            icon: Stack(
+              children: [
+                const Icon(Icons.message),
+                if (_unreadMessageCount > 0)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: NotificationBadge(
+                      count: _unreadMessageCount,
+                      backgroundColor: AppTheme.coral,
+                    ),
+                  ),
+              ],
+            ),
+            label: 'Messages',
+          ),
+
+          const BottomNavigationBarItem(
+              icon: Icon(Icons.square), label: 'Home'),
+          const BottomNavigationBarItem(
+              icon: Icon(Icons.person), label: 'Profile'),
+          const BottomNavigationBarItem(
               icon: Icon(Icons.settings), label: 'Settings'),
         ],
         currentIndex: _currentIndex,
@@ -162,6 +227,7 @@ class _MainScreenState extends State<MainScreen> {
           setState(() {
             _currentIndex = index;
           });
+          _markMessagesAsReadIfNeeded(index);
         },
       ),
     );

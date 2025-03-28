@@ -3,17 +3,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../utils/conversation_manager.dart';
 import '../utils/user_blocking_service.dart';
+import '../services/message_tracker.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
   final String chatTitle;
   final String chatType;
+  final MessageTracker? messageTracker;
 
   const ChatScreen({
     super.key,
     required this.userId,
     required this.chatTitle,
     required this.chatType,
+    this.messageTracker,
   });
 
   @override
@@ -40,6 +43,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // Assign a color based on chat title
     final colorIndex = widget.chatTitle.hashCode % AppTheme.squareColors.length;
     chatColor = AppTheme.squareColors[colorIndex];
+
+    // Mark conversation as read when entering
+    if (widget.messageTracker != null) {
+      widget.messageTracker!.markConversationAsRead(widget.chatTitle);
+    }
   }
 
   @override

@@ -3,120 +3,25 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
 import '../utils/conversation_manager.dart';
-import '../utils/blocking_utils.dart';
 import '../widgets/custom_header.dart';
+import '../services/message_tracker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class MessagesScreen extends StatefulWidget {
+class MessagesScreen extends StatelessWidget {
   final String userId;
+  final MessageTracker messageTracker;
 
-  const MessagesScreen({super.key, required this.userId});
-
-  @override
-  _MessagesScreenState createState() => _MessagesScreenState();
-}
-
-class _MessagesScreenState extends State<MessagesScreen> {
-  List<DocumentSnapshot>? _filteredConversations;
-  bool _isLoading = true;
-  bool _hasError = false;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    // Load conversations when screen initializes
-    _loadConversations();
-  }
-
-  Future<void> _loadConversations() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-      _errorMessage = null;
-    });
-
-    try {
-      // Get all conversations where user is a participant
-      final snapshot = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participants', arrayContains: widget.userId)
-          .get();
-
-      // Apply visibility filter
-      final List<DocumentSnapshot> visibleConversations =
-          snapshot.docs.where((doc) {
-        try {
-          return ConversationManager.shouldShowOnMessagesScreen(
-            userId: widget.userId,
-            conversation: doc,
-          );
-        } catch (e) {
-          print("Error checking visibility for ${doc.id}: $e");
-          return false;
-        }
-      }).toList();
-
-      // Filter out conversations with blocked users
-      final filteredConversations =
-          await BlockingUtils.filterConversationsWithBlockedUsers(
-        currentUserId: widget.userId,
-        conversations: visibleConversations,
-      );
-
-      // Sort by most recent activity
-      filteredConversations.sort((a, b) {
-        Timestamp? aLastActivity;
-        Timestamp? bLastActivity;
-
-        // Safely access lastActivity field
-        try {
-          final aData = a.data() as Map<String, dynamic>?;
-          if (aData != null && aData.containsKey('lastActivity')) {
-            aLastActivity = aData['lastActivity'] as Timestamp?;
-          }
-        } catch (e) {
-          print("Error accessing lastActivity for document ${a.id}: $e");
-        }
-
-        try {
-          final bData = b.data() as Map<String, dynamic>?;
-          if (bData != null && bData.containsKey('lastActivity')) {
-            bLastActivity = bData['lastActivity'] as Timestamp?;
-          }
-        } catch (e) {
-          print("Error accessing lastActivity for document ${b.id}: $e");
-        }
-
-        if (aLastActivity == null && bLastActivity == null) {
-          return 0;
-        } else if (aLastActivity == null) {
-          return 1;
-        } else if (bLastActivity == null) {
-          return -1;
-        }
-
-        return bLastActivity.compareTo(aLastActivity);
-      });
-
-      setState(() {
-        _filteredConversations = filteredConversations;
-        _isLoading = false;
-      });
-    } catch (e) {
-      print("Error loading conversations: $e");
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = e.toString();
-      });
-    }
-  }
+  const MessagesScreen({
+    super.key,
+    required this.userId,
+    required this.messageTracker,
+  });
 
   Future<List<String>> _getFriends() async {
     try {
       DocumentSnapshot doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(widget.userId)
+          .doc(userId)
           .get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>?;
@@ -124,11 +29,63 @@ class _MessagesScreenState extends State<MessagesScreen> {
           return List<String>.from(data['friends']);
         }
       }
-      print("No friends data found for user ${widget.userId}");
+      print("No friends data found for user $userId");
       return [];
     } catch (e) {
       print("Error getting friends: $e");
       return [];
+    }
+  }
+
+  void _createDummyConversation(BuildContext context) async {
+    try {
+      // Get user location for origin
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (!userDoc.exists) {
+        throw Exception('User data not found');
+      }
+
+      final userData = userDoc.data() as Map<String, dynamic>;
+      final userLat = userData['latitude'] as double? ?? 0.0;
+      final userLon = userData['longitude'] as double? ?? 0.0;
+
+      final String topic = "Test Conversation";
+      final String type = "Private";
+
+      // Create a test conversation with proper location information
+      await ConversationManager.createConversation(
+        title: topic,
+        type: type,
+        creatorId: userId,
+        initialParticipants: [userId],
+        latitude: userLat,
+        longitude: userLon,
+      );
+
+      // Add a test message
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(topic)
+          .collection('messages')
+          .add({
+        'text': 'This is a test message',
+        'senderId': userId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'likes': [],
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Test conversation created')),
+      );
+    } catch (e) {
+      print("Error creating test conversation: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
 
@@ -143,20 +100,46 @@ class _MessagesScreenState extends State<MessagesScreen> {
           .get();
 
       if (messagesSnapshot.docs.isNotEmpty) {
-        String messageText =
-            messagesSnapshot.docs.first['text'] ?? 'No message';
-
-        // Remove "Group created: " prefix if present
-        if (messageText.startsWith("Group created: ")) {
-          messageText = messageText.substring("Group created: ".length);
-        }
-
-        return messageText;
+        return messagesSnapshot.docs.first['text'] ?? 'No message';
       }
     } catch (e) {
       print("Error getting last message: $e");
     }
     return 'No messages yet';
+  }
+
+  // Get unread message count for a conversation
+  Future<int> _getUnreadCount(String conversationId) async {
+    try {
+      // Get the last read timestamp for this conversation
+      final prefs = await SharedPreferences.getInstance();
+      final timestampStr =
+          prefs.getString('last_read_${userId}_$conversationId');
+      Timestamp lastReadTimestamp = Timestamp(0, 0);
+
+      if (timestampStr != null) {
+        final parts = timestampStr.split('_');
+        if (parts.length == 2) {
+          final seconds = int.parse(parts[0]);
+          final nanoseconds = int.parse(parts[1]);
+          lastReadTimestamp = Timestamp(seconds, nanoseconds);
+        }
+      }
+
+      // Count messages newer than the last read timestamp and not from current user
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .where('timestamp', isGreaterThan: lastReadTimestamp)
+          .where('senderId', isNotEqualTo: userId)
+          .get();
+
+      return querySnapshot.docs.length;
+    } catch (e) {
+      print("Error getting unread count: $e");
+      return 0;
+    }
   }
 
   String _formatTimestamp(Timestamp? timestamp) {
@@ -179,320 +162,413 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.message_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            'No conversations yet',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Start a new conversation from the home screen',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 64, color: Colors.red),
-          const SizedBox(height: 16),
-          const Text(
-            'Error loading conversations',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _errorMessage ?? 'Unknown error',
-            style: const TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _loadConversations,
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    print("Building MessagesScreen for user: ${widget.userId}");
+    print("Building MessagesScreen for user: $userId");
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: RefreshIndicator(
-        onRefresh: _loadConversations,
-        child: CustomScrollView(
-          slivers: [
-            // Custom gradient header
-            CustomHeader(
-              title: 'Messages',
-              subtitle: 'Your conversations',
-              primaryColor: AppTheme.green,
-            ),
+      body: CustomScrollView(
+        slivers: [
+          // Custom gradient header
+          CustomHeader(
+            title: 'Messages',
+            subtitle: 'Your conversations',
+            primaryColor: AppTheme.green,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.add, color: Colors.white),
+                onPressed: () => _createDummyConversation(context),
+              ),
+            ],
+          ),
 
-            // Messages list or appropriate state
-            SliverFillRemaining(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _hasError
-                      ? _buildErrorState()
-                      : _filteredConversations == null ||
-                              _filteredConversations!.isEmpty
-                          ? _buildEmptyState()
-                          : ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              itemCount: _filteredConversations!.length,
-                              itemBuilder: (context, index) {
-                                var doc = _filteredConversations![index];
-                                String conversationId = doc.id;
-                                Map<String, dynamic> data =
-                                    doc.data() as Map<String, dynamic>;
+          // Messages list
+          SliverToBoxAdapter(
+            child: Container(
+              color: Colors.grey[100],
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('conversations')
+                    .where('participants', arrayContains: userId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  // Add debug information
+                  print("Stream state: ${snapshot.connectionState}");
+                  if (snapshot.hasError) {
+                    print("Stream error: ${snapshot.error}");
+                    return Center(
+                        child: Text(
+                            'Error loading conversations: ${snapshot.error}'));
+                  }
 
-                                String type = data['type'] ?? 'Group';
-                                List<dynamic> participants =
-                                    data['participants'] ?? [];
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                                // Get the display name for user chat partner
-                                String displayName = type == 'Private'
-                                    ? participants
-                                        .firstWhere((id) => id != widget.userId,
-                                            orElse: () => 'Unknown')
-                                        .toString()
-                                    : conversationId;
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    print("No conversations found for user $userId");
+                    return SizedBox(
+                      height: MediaQuery.of(context).size.height -
+                          120, // Adjust for header height
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.message_outlined,
+                                size: 64, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'No conversations yet',
+                              style:
+                                  TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Start a new conversation from the home screen',
+                              style:
+                                  TextStyle(fontSize: 14, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: () =>
+                                  _createDummyConversation(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.green,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                              ),
+                              child: const Text('Create Test Conversation'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
 
-                                // Get color based on index
-                                Color tileColor = AppTheme.squareColors[
-                                    index % AppTheme.squareColors.length];
+                  print("Found ${snapshot.data!.docs.length} conversations");
 
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 4,
-                                      horizontal: 4), // Space between items
-                                  child: Dismissible(
-                                    key: Key(conversationId),
-                                    direction: DismissDirection.endToStart,
-                                    background: Container(
-                                      alignment: Alignment.centerRight,
-                                      padding: const EdgeInsets.only(right: 20),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Icon(
-                                        Icons.delete,
-                                        color: Colors.white,
-                                      ),
+                  // Filter conversations based on the visibility rule for Messages screen
+                  final List<QueryDocumentSnapshot> visibleConversations =
+                      snapshot.data!.docs.where((doc) {
+                    return ConversationManager.shouldShowOnMessagesScreen(
+                      userId: userId,
+                      conversation: doc,
+                    );
+                  }).toList();
+
+// Sort by most recent activity (with null safety)
+                  visibleConversations.sort((a, b) {
+                    // Safely extract timestamps with null checks
+                    Timestamp? aLastActivity;
+                    Timestamp? bLastActivity;
+
+                    try {
+                      if (a.data() is Map<String, dynamic>) {
+                        final aData = a.data() as Map<String, dynamic>;
+                        if (aData.containsKey('lastActivity')) {
+                          aLastActivity = aData['lastActivity'] as Timestamp?;
+                        }
+                      }
+                    } catch (e) {
+                      print("Error accessing lastActivity for doc a: $e");
+                    }
+
+                    try {
+                      if (b.data() is Map<String, dynamic>) {
+                        final bData = b.data() as Map<String, dynamic>;
+                        if (bData.containsKey('lastActivity')) {
+                          bLastActivity = bData['lastActivity'] as Timestamp?;
+                        }
+                      }
+                    } catch (e) {
+                      print("Error accessing lastActivity for doc b: $e");
+                    }
+
+                    // Handle null cases
+                    if (aLastActivity == null && bLastActivity == null) {
+                      return 0;
+                    } else if (aLastActivity == null) {
+                      return 1; // Sort nulls to the end
+                    } else if (bLastActivity == null) {
+                      return -1; // Sort nulls to the end
+                    }
+
+                    // If both have timestamps, compare them
+                    return bLastActivity.compareTo(aLastActivity);
+                  });
+
+                  // If no visible conversations after filtering
+                  if (visibleConversations.isEmpty) {
+                    return SizedBox(
+                      height: MediaQuery.of(context).size.height - 120,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.message_outlined,
+                                size: 64, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'No active conversations',
+                              style:
+                                  TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Your conversations will appear here once you participate',
+                              style:
+                                  TextStyle(fontSize: 14, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return FutureBuilder<List<String>>(
+                    future: _getFriends(),
+                    builder: (context, friendsSnapshot) {
+                      if (friendsSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      List<String> friends = friendsSnapshot.data ?? [];
+                      print("Found ${friends.length} friends for user $userId");
+
+                      return ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(8),
+                        itemCount: visibleConversations.length,
+                        itemBuilder: (context, index) {
+                          var doc = visibleConversations[index];
+                          String topic = doc['title'] ?? 'Unnamed';
+                          String type = doc['type'] ?? 'Group';
+                          List<dynamic> participants =
+                              doc['participants'] ?? [];
+
+                          print("Processing conversation: $topic, type: $type");
+
+                          // Get the other participant for private chats
+                          String title = type == 'Private'
+                              ? participants
+                                  .firstWhere((id) => id != userId,
+                                      orElse: () => 'Unknown')
+                                  .toString()
+                              : topic;
+
+                          bool isFriend =
+                              type == 'Private' && friends.contains(title);
+
+                          // Get color based on index (cycling through the color palette)
+                          Color tileColor = AppTheme.squareColors[
+                              index % AppTheme.squareColors.length];
+
+                          return FutureBuilder<int>(
+                            future: _getUnreadCount(topic),
+                            builder: (context, unreadCountSnapshot) {
+                              int unreadCount = unreadCountSnapshot.data ?? 0;
+
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 4),
+                                child: Card(
+                                  elevation: 2,
+                                  margin: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: unreadCount > 0
+                                          ? tileColor
+                                          : tileColor.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                    confirmDismiss: (direction) async {
-                                      return await showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return AlertDialog(
-                                            title: const Text("Confirm"),
-                                            content: const Text(
-                                                "Are you sure you want to delete this conversation?"),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.of(context)
-                                                        .pop(false),
-                                                child: const Text("CANCEL"),
-                                              ),
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.of(context)
-                                                        .pop(true),
-                                                child: const Text("DELETE",
-                                                    style: TextStyle(
-                                                        color: Colors.red)),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    },
-                                    onDismissed: (direction) {
-                                      // Remove the user from the conversation participants
-                                      FirebaseFirestore.instance
-                                          .collection('conversations')
-                                          .doc(conversationId)
-                                          .update({
-                                        'participants': FieldValue.arrayRemove(
-                                            [widget.userId]),
-                                      });
+                                    child: FutureBuilder<String>(
+                                      future: _getLastMessage(topic),
+                                      builder: (context, lastMessageSnapshot) {
+                                        String lastMessage =
+                                            lastMessageSnapshot.data ??
+                                                'Loading...';
 
-                                      // Show a snackbar
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content:
-                                              Text('Removed from conversation'),
-                                          action: SnackBarAction(
-                                            label: 'UNDO',
-                                            onPressed: () {
-                                              // Add the user back to participants
-                                              FirebaseFirestore.instance
-                                                  .collection('conversations')
-                                                  .doc(conversationId)
-                                                  .update({
-                                                'participants':
-                                                    FieldValue.arrayUnion(
-                                                        [widget.userId]),
-                                              });
-                                              // Reload conversations
-                                              _loadConversations();
-                                            },
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Card(
-                                      elevation: 2,
-                                      margin: EdgeInsets.zero,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: tileColor,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: ListTile(
+                                        return ListTile(
                                           contentPadding:
                                               const EdgeInsets.symmetric(
-                                                  horizontal: 16, vertical: 6),
-                                          leading: CircleAvatar(
-                                            backgroundColor: tileColor
-                                                        .computeLuminance() >
-                                                    0.5
-                                                ? Colors.black.withOpacity(0.1)
-                                                : Colors.white.withOpacity(0.8),
-                                            child: type == 'Private'
-                                                ? Text(
-                                                    displayName.isNotEmpty
-                                                        ? displayName[0]
-                                                            .toUpperCase()
-                                                        : '?',
-                                                    style: TextStyle(
-                                                      color: tileColor
-                                                                  .computeLuminance() >
-                                                              0.5
-                                                          ? Colors.black
-                                                          : tileColor,
-                                                      fontWeight:
-                                                          FontWeight.bold,
+                                                  horizontal: 16, vertical: 8),
+                                          leading: Stack(
+                                            children: [
+                                              CircleAvatar(
+                                                backgroundColor: tileColor
+                                                            .computeLuminance() >
+                                                        0.5
+                                                    ? Colors.black
+                                                        .withOpacity(0.1)
+                                                    : Colors.white
+                                                        .withOpacity(0.8),
+                                                child: type == 'Private'
+                                                    ? Text(
+                                                        title.isNotEmpty
+                                                            ? title[0]
+                                                                .toUpperCase()
+                                                            : '?',
+                                                        style: TextStyle(
+                                                          color: tileColor
+                                                                      .computeLuminance() >
+                                                                  0.5
+                                                              ? Colors.black
+                                                              : tileColor,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      )
+                                                    : Icon(
+                                                        Icons.group,
+                                                        color: tileColor
+                                                                    .computeLuminance() >
+                                                                0.5
+                                                            ? Colors.black
+                                                            : tileColor,
+                                                      ),
+                                              ),
+                                              if (unreadCount > 0)
+                                                Positioned(
+                                                  right: -2,
+                                                  top: -2,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(4),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red,
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color: Colors.white,
+                                                        width: 1,
+                                                      ),
                                                     ),
-                                                  )
-                                                : Icon(
-                                                    Icons.group,
-                                                    color: tileColor
-                                                                .computeLuminance() >
-                                                            0.5
-                                                        ? Colors.black
-                                                        : tileColor,
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                      minWidth: 14,
+                                                      minHeight: 14,
+                                                    ),
+                                                    child: Text(
+                                                      unreadCount > 9
+                                                          ? '9+'
+                                                          : unreadCount
+                                                              .toString(),
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
                                                   ),
+                                                ),
+                                            ],
                                           ),
-
-                                          // Directly use the message as the title
-                                          title: FutureBuilder<String>(
-                                              future: _getLastMessage(
-                                                  conversationId),
-                                              builder: (context,
-                                                  lastMessageSnapshot) {
-                                                String messageText =
-                                                    lastMessageSnapshot.data ??
-                                                        'Loading...';
-
-                                                // We already strip "Group created:" in _getLastMessage
-
-                                                return Text(
-                                                  messageText,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                          title: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  title,
                                                   style: TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.normal,
-                                                    fontSize: 15,
+                                                    fontWeight: unreadCount > 0
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                    fontSize: 16,
                                                     color: tileColor
                                                                 .computeLuminance() >
                                                             0.5
                                                         ? Colors.black
                                                         : Colors.white,
                                                   ),
-                                                );
-                                              }),
-
+                                                ),
+                                              ),
+                                              if (unreadCount > 0)
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                  ),
+                                                  child: Text(
+                                                    unreadCount > 9
+                                                        ? '9+'
+                                                        : unreadCount
+                                                            .toString(),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                           subtitle: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              // Show the contact name for private chats, or member count for group chats
-                                              if (type == 'Private')
-                                                Text(
-                                                  displayName,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: tileColor
-                                                                .computeLuminance() >
-                                                            0.5
-                                                        ? Colors.black
-                                                            .withOpacity(0.8)
-                                                        : Colors.white
-                                                            .withOpacity(0.9),
-                                                  ),
-                                                )
-                                              else
-                                                Row(
-                                                  children: [
-                                                    if (type == 'Private Group')
-                                                      const Text('🔒 ',
-                                                          style: TextStyle(
-                                                              fontSize: 12)),
-                                                    Text(
-                                                      participants.length == 1
-                                                          ? '1 member'
-                                                          : '${participants.length} members',
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: tileColor
-                                                                    .computeLuminance() >
-                                                                0.5
-                                                            ? Colors.black
-                                                                .withOpacity(
-                                                                    0.6)
-                                                            : Colors.white
-                                                                .withOpacity(
-                                                                    0.8),
-                                                      ),
-                                                    ),
-                                                  ],
+                                              Text(
+                                                lastMessage,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: unreadCount > 0
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                  color: tileColor
+                                                              .computeLuminance() >
+                                                          0.5
+                                                      ? Colors.black
+                                                          .withOpacity(0.7)
+                                                      : Colors.white
+                                                          .withOpacity(0.9),
                                                 ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  if (type == 'Private Group')
+                                                    const Text('🔒 ',
+                                                        style: TextStyle(
+                                                            fontSize: 12)),
+                                                  Text(
+                                                    type == 'Private'
+                                                        ? 'Private'
+                                                        : '${participants.length} members',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: tileColor
+                                                                  .computeLuminance() >
+                                                              0.5
+                                                          ? Colors.black
+                                                              .withOpacity(0.6)
+                                                          : Colors.white
+                                                              .withOpacity(0.8),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                             ],
                                           ),
-
                                           trailing:
                                               FutureBuilder<QuerySnapshot>(
                                             future: FirebaseFirestore.instance
                                                 .collection('conversations')
-                                                .doc(conversationId)
+                                                .doc(topic)
                                                 .collection('messages')
                                                 .orderBy('timestamp',
                                                     descending: true)
@@ -500,9 +576,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                                 .get(),
                                             builder:
                                                 (context, messageSnapshot) {
-                                              if (!messageSnapshot.hasData ||
-                                                  messageSnapshot
-                                                      .data!.docs.isEmpty) {
+                                              if (!messageSnapshot.hasData) {
+                                                return const SizedBox.shrink();
+                                              }
+
+                                              if (messageSnapshot
+                                                  .data!.docs.isEmpty) {
                                                 return const SizedBox.shrink();
                                               }
 
@@ -542,31 +621,42 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                             },
                                           ),
                                           onTap: () {
+                                            // Mark conversation as read
+                                            messageTracker
+                                                .markConversationAsRead(topic);
+
+                                            // Navigate to chat screen
                                             Navigator.push(
                                               context,
                                               MaterialPageRoute(
                                                 builder: (context) =>
                                                     ChatScreen(
-                                                  userId: widget.userId,
-                                                  chatTitle: conversationId,
+                                                  userId: userId,
+                                                  chatTitle: topic,
                                                   chatType: type,
+                                                  messageTracker:
+                                                      messageTracker,
                                                 ),
                                               ),
-                                            ).then((_) {
-                                              // Refresh conversations when returning from chat
-                                              _loadConversations();
-                                            });
+                                            );
                                           },
-                                        ),
-                                      ),
+                                        );
+                                      },
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
