@@ -1,24 +1,20 @@
+// lib/screens/edit_profile_screen.dart - Updated for the new user model
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import '../models/user.dart';
+import '../theme/app_theme.dart';
 
 class EditProfileScreen extends StatefulWidget {
-  final String name;
-  final String gender;
-  final String hometown;
-  final String bio;
-  final String profileImageUrl;
+  final TownUser user;
 
   const EditProfileScreen({
     super.key,
-    required this.name,
-    required this.gender,
-    required this.hometown,
-    required this.bio,
-    required this.profileImageUrl,
+    required this.user,
   });
 
   @override
@@ -39,11 +35,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.name);
-    _genderController = TextEditingController(text: widget.gender);
-    _hometownController = TextEditingController(text: widget.hometown);
-    _bioController = TextEditingController(text: widget.bio);
-    _profileImageUrl = widget.profileImageUrl;
+    _nameController = TextEditingController(text: widget.user.name);
+    _genderController = TextEditingController(text: widget.user.gender);
+    _hometownController = TextEditingController(text: widget.user.hometown);
+    _bioController = TextEditingController(text: widget.user.bio);
+    _profileImageUrl = widget.user.profileImageUrl;
   }
 
   @override
@@ -66,8 +62,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-// Update the _saveProfile method in edit_profile_screen.dart
-
   Future<void> _saveProfile() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -87,9 +81,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               .child('$userId.jpg');
 
           print("Uploading image to Firebase Storage: ${_imageFile!.path}");
-          print(
-              "Current user auth state: ${FirebaseAuth.instance.currentUser != null ? 'Authenticated' : 'Not authenticated'}");
-          print("Current user ID: ${FirebaseAuth.instance.currentUser?.uid}");
+
           // Create the upload task
           UploadTask uploadTask = storageRef.putFile(_imageFile!);
 
@@ -126,9 +118,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         Navigator.pop(context, true); // Return true to indicate success
       } catch (e) {
         print("Error updating profile: $e");
-        print("Error details: ${e.toString()}");
-        // Print the stack trace to see where the error occurs
-        print(StackTrace.current);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error updating profile: $e')),
         );
@@ -168,7 +157,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: Colors.grey[300]!,
+                                color: AppTheme.coral.withOpacity(0.5),
                                 width: 2,
                               ),
                             ),
@@ -185,17 +174,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                           fit: BoxFit.cover,
                                           errorBuilder:
                                               (context, error, stackTrace) {
-                                            return const Icon(
-                                              Icons.person,
-                                              size: 80,
-                                              color: Colors.grey,
+                                            return Container(
+                                              color: AppTheme.coral
+                                                  .withOpacity(0.2),
+                                              child: Center(
+                                                child: Text(
+                                                  _nameController
+                                                          .text.isNotEmpty
+                                                      ? _nameController.text[0]
+                                                          .toUpperCase()
+                                                      : '?',
+                                                  style: TextStyle(
+                                                    fontSize: 60,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppTheme.coral,
+                                                  ),
+                                                ),
+                                              ),
                                             );
                                           },
                                         )
-                                      : const Icon(
-                                          Icons.person,
-                                          size: 80,
-                                          color: Colors.grey,
+                                      : Container(
+                                          color:
+                                              AppTheme.coral.withOpacity(0.2),
+                                          child: Center(
+                                            child: Text(
+                                              _nameController.text.isNotEmpty
+                                                  ? _nameController.text[0]
+                                                      .toUpperCase()
+                                                  : '?',
+                                              style: TextStyle(
+                                                fontSize: 60,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppTheme.coral,
+                                              ),
+                                            ),
+                                          ),
                                         )),
                             ),
                           ),
@@ -204,8 +218,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             right: 0,
                             child: Container(
                               padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF07004D),
+                              decoration: BoxDecoration(
+                                color: AppTheme.coral,
                                 shape: BoxShape.circle,
                               ),
                               child: IconButton(
@@ -228,6 +242,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Name',
                         border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -244,6 +259,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Gender',
                         border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.people),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -254,6 +270,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Hometown',
                         border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_city),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -264,7 +281,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Bio',
                         border: OutlineInputBorder(),
-                        helperText: 'Maximum 150 words',
+                        helperText:
+                            'Tell others about yourself (max 150 words)',
+                        prefixIcon: Icon(Icons.info),
                       ),
                       maxLines: 4,
                       validator: (value) {
@@ -280,6 +299,59 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         return null;
                       },
                     ),
+                    const SizedBox(height: 8),
+
+                    // Info text about other profile sections
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info, color: AppTheme.blue, size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Other Profile Features',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(),
+                          const Text(
+                            'You can edit these from your profile page:',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildFeatureInfoRow(
+                            icon: Icons.mood,
+                            color: AppTheme.yellow,
+                            title: 'Status',
+                            description: 'Share what you\'re up to',
+                          ),
+                          _buildFeatureInfoRow(
+                            icon: Icons.interests,
+                            color: AppTheme.green,
+                            title: 'Interests',
+                            description: 'Add your interests (up to 5)',
+                          ),
+                          _buildFeatureInfoRow(
+                            icon: Icons.favorite,
+                            color: AppTheme.blue,
+                            title: 'Local Favorites',
+                            description: 'Add your favorite local places',
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 32),
 
                     // Save Button
@@ -289,7 +361,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         onPressed: _saveProfile,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: const Color(0xFF07004D),
+                          backgroundColor: AppTheme.coral,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                         child: const Text(
                           'Save Profile',
@@ -301,6 +377,49 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildFeatureInfoRow({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String description,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

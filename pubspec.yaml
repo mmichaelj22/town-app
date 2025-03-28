@@ -19,6 +19,7 @@ dependencies:
   permission_handler: ^10.2.0
   shared_preferences: ^2.2.2
   http: ^1.1.0
+  timeago: ^3.3.0  # For "time ago" formatting in status messages
 
 dev_dependencies:
   flutter_test:
