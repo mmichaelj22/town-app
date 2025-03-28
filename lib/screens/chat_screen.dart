@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../utils/conversation_manager.dart';
+import '../utils/user_blocking_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -211,6 +212,102 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  // Add this method to show the block user dialog
+  void _showBlockUserDialog(
+      BuildContext context, String senderId, String senderName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Block $senderName?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'When you block someone:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• You won\'t see their messages'),
+            const Text('• They won\'t know you\'ve blocked them'),
+            const Text('• You can unblock them later in Settings'),
+            const SizedBox(height: 16),
+            const Text('Are you sure you want to block this user?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              _blockUser(senderId, senderName);
+            },
+            child: const Text('BLOCK USER'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add this method to actually block the user
+  Future<void> _blockUser(String userToBlockId, String userToBlockName) async {
+    try {
+      // Show loading indicator
+      setState(() {
+        // You could add a loading state variable here if needed
+      });
+
+      // Create an instance of the blocking service
+      final UserBlockingService blockingService = UserBlockingService();
+
+      // Block the user
+      await blockingService.blockUser(
+        currentUserId: widget.userId,
+        userToBlockId: userToBlockId,
+        userToBlockName: userToBlockName,
+      );
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$userToBlockName has been blocked'),
+          action: SnackBarAction(
+            label: 'UNDO',
+            onPressed: () {
+              // Unblock the user
+              blockingService.unblockUser(
+                currentUserId: widget.userId,
+                blockedUserId: userToBlockId,
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('$userToBlockName has been unblocked')),
+              );
+            },
+          ),
+        ),
+      );
+
+      // Return to messages screen
+      Navigator.pop(context);
+    } catch (e) {
+      print("Error blocking user: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error blocking user: $e')),
+      );
+    } finally {
+      // Hide loading indicator
+      setState(() {
+        // Reset loading state here if you added one
+      });
+    }
+  }
+
+  // END BLOCKING FUNCTIONALITY
+
   Widget _buildMessageBubble(
       DocumentSnapshot message, bool isMe, String sender) {
     final messageId = message.id;
@@ -220,6 +317,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final likes = data['likes'] ?? [];
     final bool userLiked = likes.contains(widget.userId);
     final int likeCount = likes.length;
+    final String senderId = data['senderId'] as String? ?? '';
 
     // Create animation controller if it doesn't exist for this message
     if (!_bubbleAnimations.containsKey(messageId)) {
@@ -234,6 +332,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       curve: Curves.elasticOut,
     );
 
+    // Return the message bubble directly
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
       child: Row(
@@ -398,47 +497,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(18),
                       onDoubleTap: () => _toggleLike(messageId, likes),
-                      onLongPress: () {
-                        // Show reaction options
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Message Actions'),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ListTile(
-                                  leading: Icon(
-                                    userLiked
-                                        ? Icons.thumb_down
-                                        : Icons.thumb_up,
-                                    color: chatColor,
-                                  ),
-                                  title: Text(userLiked ? 'Unlike' : 'Like'),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _toggleLike(messageId, likes);
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.copy,
-                                      color: Colors.blue),
-                                  title: const Text('Copy Text'),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    // Copy message text to clipboard
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              'Message copied to clipboard')),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
                     ),
                   ),
                 ),
@@ -513,6 +571,245 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  void _showChatInfoOptions(BuildContext context) {
+    // Determine if this is a private chat with one other person
+    bool isOneOnOneChat =
+        widget.chatType == 'Private' && participants.length == 2;
+
+    // If one-on-one chat, get the other user's ID
+    String? otherUserId;
+    String? otherUserName;
+    if (isOneOnOneChat) {
+      otherUserId = participants.firstWhere((id) => id != widget.userId,
+          orElse: () => '');
+      otherUserName = widget.chatTitle.split(' with ').last;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Sheet header
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // Chat info header
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: chatColor.withOpacity(0.2),
+                      radius: 24,
+                      child: widget.chatType == 'Private'
+                          ? Text(
+                              otherUserName != null && otherUserName.isNotEmpty
+                                  ? otherUserName[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: chatColor,
+                              ),
+                            )
+                          : Icon(
+                              Icons.group,
+                              color: chatColor,
+                              size: 24,
+                            ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.chatType == 'Private'
+                                ? otherUserName ?? 'User'
+                                : widget.chatTitle,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          Text(
+                            widget.chatType == 'Private'
+                                ? 'Private Chat'
+                                : widget.chatType == 'Private Group'
+                                    ? '${participants.length} members - Private'
+                                    : '${participants.length} members',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Divider(),
+
+              // Add Friend option (only for private chats)
+              if (isOneOnOneChat &&
+                  otherUserId != null &&
+                  otherUserId.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.person_add, color: Colors.green),
+                  title: Text('Add ${otherUserName ?? "User"} as Friend'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _addFriend(otherUserId!, otherUserName ?? "User");
+                  },
+                ),
+
+              // Block user option (only for private chats)
+              if (isOneOnOneChat &&
+                  otherUserId != null &&
+                  otherUserId.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.block, color: Colors.red),
+                  title: Text('Block ${otherUserName ?? "User"}'),
+                  subtitle: const Text('You won\'t see their messages anymore'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showBlockUserDialog(
+                        context, otherUserId!, otherUserName ?? "User");
+                  },
+                ),
+
+              // Report option (for all chat types)
+              ListTile(
+                leading: const Icon(Icons.report_problem, color: Colors.orange),
+                title: const Text('Report'),
+                subtitle: isOneOnOneChat
+                    ? Text(
+                        'Report ${otherUserName ?? "User"} for inappropriate behavior')
+                    : const Text('Report inappropriate behavior in this chat'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // Implement report functionality
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Report feature coming soon')),
+                  );
+                },
+              ),
+
+              // Leave chat option (for all chat types)
+              ListTile(
+                leading: const Icon(Icons.exit_to_app, color: Colors.blue),
+                title: const Text('Leave Conversation'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showLeaveConfirmation(context);
+                },
+              ),
+
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+// Add these new methods to handle the functionality
+
+// Method to add a friend
+  Future<void> _addFriend(String friendId, String friendName) async {
+    try {
+      // Show loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adding friend...')),
+      );
+
+      // Add to current user's friends list
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .update({
+        'friends': FieldValue.arrayUnion([friendName]),
+      });
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$friendName added as friend')),
+      );
+    } catch (e) {
+      print("Error adding friend: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding friend: $e')),
+      );
+    }
+  }
+
+// Method to show leave confirmation
+  void _showLeaveConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave Conversation?'),
+        content: const Text(
+          'You will be removed from this conversation. You can rejoin later if invited or if this is a public group.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              _leaveConversation();
+            },
+            child: const Text('LEAVE'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Method to leave conversation
+  Future<void> _leaveConversation() async {
+    try {
+      // Remove user from participants
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(widget.chatTitle)
+          .update({
+        'participants': FieldValue.arrayRemove([widget.userId]),
+      });
+
+      // Show success message and go back
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You left the conversation')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      print("Error leaving conversation: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error leaving conversation: $e')),
+      );
+    }
   }
 
   @override
@@ -613,10 +910,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 color: Colors.white),
                             onPressed: () {
                               // Show chat info (members, etc.)
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Chat info coming soon!')),
-                              );
+                              _showChatInfoOptions(context);
                             },
                           ),
                         ],
@@ -824,9 +1118,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ],
           ),
 
-// Replace the center like animation section with this corrected version:
-
-// Center like animation overlay
+          // Center like animation overlay
           if (_showingLikeAnimation)
             Positioned.fill(
               child: Material(

@@ -130,6 +130,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       const ProfileScreen(),
       SettingsScreen(
+        userId: uid, // Add this line to pass the userId
         detectionRadius: detectionRadius,
         onRadiusChanged: (value) async {
           setState(() {

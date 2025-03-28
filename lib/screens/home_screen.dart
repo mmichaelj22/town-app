@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
-import 'new_private_chat_dialog.dart';
 import 'conversation_starter.dart';
 import '../utils/conversation_manager.dart';
+import '../utils/blocking_utils.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
+    // double screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
       appBar: AppBar(
@@ -242,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
     double userLat,
     double userLon,
   ) async {
-    final List<DocumentSnapshot> visibleConversations = [];
+    List<DocumentSnapshot> visibleConversations = [];
 
     print("Processing ${conversations.length} conversations");
 
@@ -268,7 +268,15 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    print("Found ${visibleConversations.length} visible conversations");
+    // Filter out conversations with blocked users
+    visibleConversations =
+        await BlockingUtils.filterConversationsWithBlockedUsers(
+      currentUserId: userId,
+      conversations: visibleConversations,
+    );
+
+    print(
+        "Found ${visibleConversations.length} visible conversations after filtering blocked users");
     return visibleConversations;
   }
 
@@ -297,10 +305,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Extract topic from title if available
-    String topic = title;
-    if (title.contains(" with ")) {
-      topic = title.split(" with ").first;
-    }
+    // String topic = title;
+    // if (title.contains(" with ")) {
+    //   topic = title.split(" with ").first;
+    // }
 
     // Get color based on index
     Color color = squareColors[index % squareColors.length];

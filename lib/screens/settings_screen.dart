@@ -1,17 +1,80 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_header.dart';
+import '../utils/blocked_users_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
+  final String userId;
   final double detectionRadius;
   final ValueChanged<double> onRadiusChanged;
 
   const SettingsScreen({
     super.key,
+    required this.userId,
     required this.detectionRadius,
     required this.onRadiusChanged,
   });
+
+  @override
+  _SettingsScreenState createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _undetectableMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUndetectableMode();
+  }
+
+  Future<void> _loadUndetectableMode() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _undetectableMode = prefs.getBool('undetectableMode') ?? false;
+    });
+  }
+
+  Future<void> _toggleUndetectableMode(bool value) async {
+    setState(() {
+      _undetectableMode = value;
+    });
+
+    // Save to local preferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('undetectableMode', value);
+
+    // Update Firestore user document
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .update({
+        'undetectable': value,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value
+              ? 'Undetectable mode enabled'
+              : 'Undetectable mode disabled'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error updating undetectable mode: $e');
+      // Revert UI if update fails
+      setState(() {
+        _undetectableMode = !value;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating settings: $e')),
+      );
+    }
+  }
 
   // Method to handle logout
   Future<void> _logout(BuildContext context) async {
@@ -50,6 +113,70 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSettingsItem({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool showBorder = true,
+    Widget? trailing,
+  }) {
+    return Column(
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: iconColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                trailing ??
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
+              ],
+            ),
+          ),
+        ),
+        if (showBorder) Divider(color: Colors.grey[300], height: 16),
+      ],
     );
   }
 
@@ -148,12 +275,12 @@ class SettingsScreen extends StatelessWidget {
                                   const TextStyle(color: Colors.white),
                             ),
                             child: Slider(
-                              value: detectionRadius,
+                              value: widget.detectionRadius,
                               min: 50.0,
                               max: 500.0,
                               divisions: 9,
-                              label: '${detectionRadius.round()} ft',
-                              onChanged: onRadiusChanged,
+                              label: '${widget.detectionRadius.round()} ft',
+                              onChanged: widget.onRadiusChanged,
                             ),
                           ),
                           Center(
@@ -165,7 +292,7 @@ class SettingsScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(
-                                'Current radius: ${detectionRadius.round()} feet',
+                                'Current radius: ${widget.detectionRadius.round()} feet',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: AppTheme.orange,
@@ -180,7 +307,7 @@ class SettingsScreen extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // Account Settings
+                  // Combined Settings Card
                   Card(
                     elevation: 4,
                     shape: RoundedRectangleBorder(
@@ -191,95 +318,71 @@ class SettingsScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(Icons.account_circle,
-                                    color: AppTheme.blue),
-                              ),
-                              const SizedBox(width: 12),
-                              const Text(
-                                'Account',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 24),
-
-                          // Account items
+                          // Blocked Users item
                           _buildSettingsItem(
                             context: context,
-                            icon: Icons.notifications,
+                            icon: Icons.block,
+                            iconColor: Colors.red,
+                            title: 'Blocked Users',
+                            subtitle: 'Manage your blocked users list',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      BlockedUsersScreen(userId: widget.userId),
+                                ),
+                              );
+                            },
+                          ),
+
+                          // Undetectable Mode item with switch
+                          _buildSettingsItem(
+                            context: context,
+                            icon: Icons.visibility_off,
                             iconColor: Colors.purple,
-                            title: 'Notifications',
-                            subtitle: 'Control app notifications',
+                            title: 'Undetectable Mode',
+                            subtitle: _undetectableMode
+                                ? 'On - Others cannot see you nearby'
+                                : 'Off - You are visible to others nearby',
                             onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Notification settings coming soon!')),
-                              );
+                              // Toggle when tapped
+                              _toggleUndetectableMode(!_undetectableMode);
                             },
+                            trailing: Switch(
+                              value: _undetectableMode,
+                              onChanged: _toggleUndetectableMode,
+                              activeColor: Colors.purple,
+                            ),
                           ),
 
+                          // Report Problem item
                           _buildSettingsItem(
                             context: context,
-                            icon: Icons.language,
-                            iconColor: Colors.green,
-                            title: 'Language',
-                            subtitle: 'App language preferences',
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content:
-                                        Text('Language settings coming soon!')),
-                              );
-                            },
-                          ),
-
-                          _buildSettingsItem(
-                            context: context,
-                            icon: Icons.privacy_tip,
+                            icon: Icons.report_problem,
                             iconColor: Colors.amber,
-                            title: 'Privacy',
-                            subtitle: 'Location sharing & data',
+                            title: 'Report a Problem',
+                            subtitle: 'Contact support with issues',
                             onTap: () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                    content:
-                                        Text('Privacy settings coming soon!')),
+                                    content: Text('Reporting coming soon!')),
                               );
                             },
+                          ),
+
+                          // Log Out item
+                          _buildSettingsItem(
+                            context: context,
+                            icon: Icons.exit_to_app,
+                            iconColor: Colors.red,
+                            title: 'Log Out',
+                            subtitle: 'Sign out of your account',
+                            onTap: () => _showLogoutConfirmation(context),
+                            showBorder: false,
                           ),
                         ],
                       ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Log Out Button
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: _buildSettingsItem(
-                      context: context,
-                      icon: Icons.exit_to_app,
-                      iconColor: Colors.red,
-                      title: 'Log Out',
-                      subtitle: 'Sign out of your account',
-                      onTap: () => _showLogoutConfirmation(context),
-                      showBorder: false,
                     ),
                   ),
 
@@ -304,68 +407,6 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSettingsItem({
-    required BuildContext context,
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    bool showBorder = true,
-  }) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: iconColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, color: iconColor),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Colors.grey[400],
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (showBorder) Divider(color: Colors.grey[300], height: 16),
-      ],
     );
   }
 }
