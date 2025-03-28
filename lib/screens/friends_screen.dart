@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../theme/app_theme.dart';
-import '../widgets/custom_header.dart'; // Import custom header
-import 'new_private_chat_dialog.dart';
+import '../widgets/custom_header.dart';
+import 'chat_screen.dart';
 
 class FriendsScreen extends StatelessWidget {
   final String userId;
@@ -79,17 +79,194 @@ class FriendsScreen extends StatelessWidget {
     });
   }
 
+  // Direct navigation to chat for Friends
+  void _navigateToChat(BuildContext context, String friendName) {
+    print("Navigating directly to chat with friend: $friendName");
+    try {
+      // Create the conversation path with a default topic
+      final String chatTitle = "Chat with $friendName";
+
+      // Create or update the conversation
+      FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(chatTitle)
+          .set({
+        'title': chatTitle,
+        'type': 'Private',
+        'participants': FieldValue.arrayUnion([userId, friendName]),
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastActivity': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)).then((_) {
+        print("Conversation created successfully");
+
+        // Navigate to chat screen
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              userId: userId,
+              chatTitle: chatTitle,
+              chatType: 'Private',
+            ),
+          ),
+        );
+      }).catchError((error) {
+        print("Error creating conversation: $error");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error creating conversation: $error')),
+        );
+      });
+    } catch (e) {
+      print("Exception in _navigateToChat: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  // Show emoji picker for Nearby users
+  void _showEmojiPickerForNearby(BuildContext context, String nearbyUserName) {
+    showDialog(
+      context: context,
+      builder: (context) => _buildEmojiPickerDialog(context, nearbyUserName),
+    );
+  }
+
+  // Emoji picker dialog
+  Widget _buildEmojiPickerDialog(BuildContext context, String userName) {
+    final List<String> emojiOptions = [
+      '👋',
+      '😍',
+      '❓',
+      '❗',
+      '🎉',
+      '🎮',
+      '📚',
+      '👨‍💻',
+      '🏋️',
+      '🧘',
+      '☕',
+      '🍕',
+      '🎵',
+      '📱',
+      '🏖️',
+      '🚴',
+      '🎬'
+    ];
+
+    return AlertDialog(
+      title: Text('Say Hi to $userName'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Pick an emoji to start the conversation:'),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: emojiOptions
+                .map((emoji) => GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context); // Close emoji picker
+                        _startChatWithEmoji(context, userName, emoji);
+                      },
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: Center(
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+
+  // Start chat with selected emoji
+  void _startChatWithEmoji(
+      BuildContext context, String userName, String emoji) {
+    try {
+      // Create the conversation path with emoji
+      final String chatTitle = "$emoji with $userName";
+
+      // Create or update the conversation
+      FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(chatTitle)
+          .set({
+        'title': chatTitle,
+        'type': 'Private',
+        'participants': FieldValue.arrayUnion([userId, userName]),
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastActivity': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)).then((_) {
+        print("Conversation with emoji created successfully");
+
+        // Navigate to chat screen
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              userId: userId,
+              chatTitle: chatTitle,
+              chatType: 'Private',
+            ),
+          ),
+        ).then((_) {
+          // After navigating to chat, add the emoji as first message
+          FirebaseFirestore.instance
+              .collection('conversations')
+              .doc(chatTitle)
+              .collection('messages')
+              .add({
+            'text': emoji,
+            'senderId': userId,
+            'timestamp': FieldValue.serverTimestamp(),
+            'likes': [],
+          }).catchError((error) {
+            print("Error adding emoji message: $error");
+          });
+        });
+      }).catchError((error) {
+        print("Error creating conversation with emoji: $error");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error creating conversation: $error')),
+        );
+      });
+    } catch (e) {
+      print("Exception in _startChatWithEmoji: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // Use the CustomHeader component instead of a custom SliverAppBar
+          // Custom gradient header
           CustomHeader(
             title: 'Friends & Nearby',
             subtitle: 'Detection radius: ${detectionRadius.round()} feet',
             primaryColor: AppTheme.blue,
-            // No explicit expandedHeight - will use the default 120.0
           ),
 
           // Nearby users section
@@ -139,12 +316,12 @@ class FriendsScreen extends StatelessWidget {
             ),
           ),
 
-          // Nearby users list
+          // Nearby users grid/empty state
           StreamBuilder<List<Map<String, dynamic>>>(
             stream: _getNearbyUsers(detectionRadius),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
-                return const SliverFillRemaining(
+                return const SliverToBoxAdapter(
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
@@ -152,145 +329,127 @@ class FriendsScreen extends StatelessWidget {
               List<Map<String, dynamic>> nearbyUsers = snapshot.data!;
 
               if (nearbyUsers.isEmpty) {
-                return const SliverFillRemaining(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.people_outline,
-                            size: 48, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text(
-                          'No nearby users found',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                        Text(
-                          'Try increasing your detection radius',
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline,
+                              size: 48, color: Colors.grey),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No nearby users found',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                          const Text(
+                            'Try increasing your detection radius',
+                            style: TextStyle(fontSize: 14, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
                     ),
                   ),
                 );
               }
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final user = nearbyUsers[index];
-                    final name = user['name'] as String;
-                    final profileImageUrl = user['profileImageUrl'] as String;
+              // Grid of nearby users
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.75,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 16,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final user = nearbyUsers[index];
+                      final name = user['name'] as String;
+                      final profileImageUrl = user['profileImageUrl'] as String;
 
-                    // Assign a color from our theme colors in a random-seeming but consistent way
-                    final colorIndex =
-                        name.hashCode % AppTheme.squareColors.length;
-                    final cardColor =
-                        AppTheme.squareColors[colorIndex].withOpacity(0.1);
-                    final borderColor = AppTheme.squareColors[colorIndex];
+                      // Assign color
+                      final colorIndex =
+                          name.hashCode % AppTheme.squareColors.length;
+                      final color = AppTheme.squareColors[colorIndex];
 
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: borderColor, width: 1),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => onSelectFriend(name),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: cardColor,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                // Profile picture or initial
-                                Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color: borderColor.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: borderColor, width: 2),
+                      return GestureDetector(
+                        onTap: () => _showEmojiPickerForNearby(context, name),
+                        child: Column(
+                          children: [
+                            // Profile image
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: color, width: 2),
+                                color: color.withOpacity(0.1),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
                                   ),
-                                  child: profileImageUrl.isNotEmpty
-                                      ? ClipOval(
-                                          child: Image.network(
-                                            profileImageUrl,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) =>
-                                                Center(
-                                              child: Text(
-                                                name[0].toUpperCase(),
-                                                style: TextStyle(
-                                                  fontSize: 24,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: borderColor,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      : Center(
+                                ],
+                              ),
+                              child: ClipOval(
+                                child: profileImageUrl.isNotEmpty
+                                    ? Image.network(
+                                        profileImageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Center(
                                           child: Text(
                                             name[0].toUpperCase(),
                                             style: TextStyle(
-                                              fontSize: 24,
+                                              fontSize: 28,
                                               fontWeight: FontWeight.bold,
-                                              color: borderColor,
+                                              color: color,
                                             ),
                                           ),
                                         ),
-                                ),
-                                const SizedBox(width: 12),
-                                // User info - without distance
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          name[0].toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.bold,
+                                            color: color,
+                                          ),
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Nearby',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Action button
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: borderColor.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: IconButton(
-                                    icon: const Icon(Icons.message),
-                                    color: borderColor,
-                                    onPressed: () => onSelectFriend(name),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            // Name
+                            Text(
+                              name,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            // Nearby label
+                            Text(
+                              'Nearby',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    );
-                  },
-                  childCount: nearbyUsers.length,
+                      );
+                    },
+                    childCount: nearbyUsers.length,
+                  ),
                 ),
               );
             },
@@ -299,7 +458,7 @@ class FriendsScreen extends StatelessWidget {
           // Friends section divider
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: Row(
                 children: [
                   Container(
@@ -330,7 +489,7 @@ class FriendsScreen extends StatelessWidget {
             ),
           ),
 
-          // Friends list
+          // Friends grid
           StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('users')
@@ -382,48 +541,82 @@ class FriendsScreen extends StatelessWidget {
                 );
               }
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final name = friends[index];
-                    // Use a different color palette for friends
-                    final colorIndex = index % AppTheme.squareColors.length;
-                    final cardColor =
-                        AppTheme.squareColors[colorIndex].withOpacity(0.7);
+              // Grid of friends
+              return SliverPadding(
+                padding: const EdgeInsets.all(16.0),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.75,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 16,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final name = friends[index];
 
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: cardColor,
-                            child: Text(
-                              name[0].toUpperCase(),
-                              style: TextStyle(
-                                color: cardColor.computeLuminance() > 0.5
-                                    ? Colors.black
-                                    : Colors.white,
-                                fontWeight: FontWeight.bold,
+                      // Get color based on friend name
+                      final colorIndex =
+                          name.hashCode % AppTheme.squareColors.length;
+                      final color = AppTheme.squareColors[colorIndex];
+
+                      return GestureDetector(
+                        onTap: () => _navigateToChat(context, name),
+                        child: Column(
+                          children: [
+                            // Profile circle
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: color.withOpacity(0.2),
+                                border: Border.all(color: color, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  name[0].toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: color,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
+                            const SizedBox(height: 8),
+                            // Name
+                            Text(
+                              name,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          trailing: Icon(Icons.chat, color: cardColor),
-                          onTap: () => onSelectFriend(name),
+                            // Friend label
+                            Text(
+                              'Friend',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    );
-                  },
-                  childCount: friends.length,
+                      );
+                    },
+                    childCount: friends.length,
+                  ),
                 ),
               );
             },
