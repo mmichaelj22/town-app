@@ -372,276 +372,357 @@ class MessagesScreen extends StatelessWidget {
                             builder: (context, unreadCountSnapshot) {
                               int unreadCount = unreadCountSnapshot.data ?? 0;
 
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Card(
-                                  elevation: 2,
-                                  margin: EdgeInsets.zero,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                              return Dismissible(
+                                key: Key(topic),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20.0),
+                                  color: Colors.red,
+                                  child: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
                                   ),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: unreadCount > 0
-                                          ? tileColor
-                                          : tileColor.withOpacity(0.7),
+                                ),
+                                onDismissed: (direction) {
+                                  // Delete the conversation from Firestore
+                                  FirebaseFirestore.instance
+                                      .collection('conversations')
+                                      .doc(topic)
+                                      .delete()
+                                      .then((_) {
+                                    // Also delete any messages in the conversation subcollection
+                                    FirebaseFirestore.instance
+                                        .collection('conversations')
+                                        .doc(topic)
+                                        .collection('messages')
+                                        .get()
+                                        .then((snapshot) {
+                                      for (DocumentSnapshot doc
+                                          in snapshot.docs) {
+                                        doc.reference.delete();
+                                      }
+                                    });
+
+                                    // Show success message
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Conversation deleted'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }).catchError((error) {
+                                    print(
+                                        "Error deleting conversation: $error");
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Error deleting conversation: $error')),
+                                    );
+                                  });
+                                },
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Card(
+                                    elevation: 2,
+                                    margin: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: FutureBuilder<String>(
-                                      future: _getLastMessage(topic),
-                                      builder: (context, lastMessageSnapshot) {
-                                        String lastMessage =
-                                            lastMessageSnapshot.data ??
-                                                'Loading...';
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: unreadCount > 0
+                                            ? tileColor
+                                            : tileColor.withOpacity(0.7),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: unreadCount > 0
+                                              ? tileColor
+                                              : tileColor.withOpacity(0.7),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: FutureBuilder<String>(
+                                          future: _getLastMessage(topic),
+                                          builder:
+                                              (context, lastMessageSnapshot) {
+                                            String lastMessage =
+                                                lastMessageSnapshot.data ??
+                                                    'Loading...';
 
-                                        return ListTile(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 16, vertical: 8),
-                                          leading: Stack(
-                                            children: [
-                                              CircleAvatar(
-                                                backgroundColor: tileColor
-                                                            .computeLuminance() >
-                                                        0.5
-                                                    ? Colors.black
-                                                        .withOpacity(0.1)
-                                                    : Colors.white
-                                                        .withOpacity(0.8),
-                                                child: type == 'Private'
-                                                    ? Text(
-                                                        title.isNotEmpty
-                                                            ? title[0]
-                                                                .toUpperCase()
-                                                            : '?',
-                                                        style: TextStyle(
-                                                          color: tileColor
-                                                                      .computeLuminance() >
-                                                                  0.5
-                                                              ? Colors.black
-                                                              : tileColor,
-                                                          fontWeight:
-                                                              FontWeight.bold,
+                                            return ListTile(
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 8),
+                                              leading: Stack(
+                                                children: [
+                                                  CircleAvatar(
+                                                    backgroundColor: tileColor
+                                                                .computeLuminance() >
+                                                            0.5
+                                                        ? Colors.black
+                                                            .withOpacity(0.1)
+                                                        : Colors.white
+                                                            .withOpacity(0.8),
+                                                    child: type == 'Private'
+                                                        ? Text(
+                                                            title.isNotEmpty
+                                                                ? title[0]
+                                                                    .toUpperCase()
+                                                                : '?',
+                                                            style: TextStyle(
+                                                              color: tileColor
+                                                                          .computeLuminance() >
+                                                                      0.5
+                                                                  ? Colors.black
+                                                                  : tileColor,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                            ),
+                                                          )
+                                                        : Icon(
+                                                            Icons.group,
+                                                            color: tileColor
+                                                                        .computeLuminance() >
+                                                                    0.5
+                                                                ? Colors.black
+                                                                : tileColor,
+                                                          ),
+                                                  ),
+                                                  if (unreadCount > 0)
+                                                    Positioned(
+                                                      right: -2,
+                                                      top: -2,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .all(4),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: Colors.red,
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          border: Border.all(
+                                                            color: Colors.white,
+                                                            width: 1,
+                                                          ),
                                                         ),
-                                                      )
-                                                    : Icon(
-                                                        Icons.group,
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                          minWidth: 14,
+                                                          minHeight: 14,
+                                                        ),
+                                                        child: Text(
+                                                          unreadCount > 9
+                                                              ? '9+'
+                                                              : unreadCount
+                                                                  .toString(),
+                                                          style:
+                                                              const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                              title: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      title,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            unreadCount > 0
+                                                                ? FontWeight
+                                                                    .bold
+                                                                : FontWeight
+                                                                    .normal,
+                                                        fontSize: 16,
                                                         color: tileColor
                                                                     .computeLuminance() >
                                                                 0.5
                                                             ? Colors.black
-                                                            : tileColor,
-                                                      ),
-                                              ),
-                                              if (unreadCount > 0)
-                                                Positioned(
-                                                  right: -2,
-                                                  top: -2,
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.all(4),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.red,
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(
-                                                        color: Colors.white,
-                                                        width: 1,
+                                                            : Colors.white,
                                                       ),
                                                     ),
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                      minWidth: 14,
-                                                      minHeight: 14,
-                                                    ),
-                                                    child: Text(
-                                                      unreadCount > 9
-                                                          ? '9+'
-                                                          : unreadCount
-                                                              .toString(),
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.bold,
+                                                  ),
+                                                  if (unreadCount > 0)
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.red,
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(10),
                                                       ),
-                                                      textAlign:
-                                                          TextAlign.center,
+                                                      child: Text(
+                                                        unreadCount > 9
+                                                            ? '9+'
+                                                            : unreadCount
+                                                                .toString(),
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
                                                     ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          title: Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  title,
-                                                  style: TextStyle(
-                                                    fontWeight: unreadCount > 0
-                                                        ? FontWeight.bold
-                                                        : FontWeight.normal,
-                                                    fontSize: 16,
-                                                    color: tileColor
-                                                                .computeLuminance() >
-                                                            0.5
-                                                        ? Colors.black
-                                                        : Colors.white,
-                                                  ),
-                                                ),
+                                                ],
                                               ),
-                                              if (unreadCount > 0)
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.red,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10),
-                                                  ),
-                                                  child: Text(
-                                                    unreadCount > 9
-                                                        ? '9+'
-                                                        : unreadCount
-                                                            .toString(),
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          subtitle: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                lastMessage,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontWeight: unreadCount > 0
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
-                                                  color: tileColor
-                                                              .computeLuminance() >
-                                                          0.5
-                                                      ? Colors.black
-                                                          .withOpacity(0.7)
-                                                      : Colors.white
-                                                          .withOpacity(0.9),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
+                                              subtitle: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
-                                                  if (type == 'Private Group')
-                                                    const Text('🔒 ',
-                                                        style: TextStyle(
-                                                            fontSize: 12)),
                                                   Text(
-                                                    type == 'Private'
-                                                        ? 'Private'
-                                                        : '${participants.length} members',
+                                                    lastMessage,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: TextStyle(
-                                                      fontSize: 12,
+                                                      fontWeight: unreadCount >
+                                                              0
+                                                          ? FontWeight.bold
+                                                          : FontWeight.normal,
                                                       color: tileColor
                                                                   .computeLuminance() >
                                                               0.5
                                                           ? Colors.black
-                                                              .withOpacity(0.6)
+                                                              .withOpacity(0.7)
                                                           : Colors.white
-                                                              .withOpacity(0.8),
+                                                              .withOpacity(0.9),
                                                     ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      if (type ==
+                                                          'Private Group')
+                                                        const Text('🔒 ',
+                                                            style: TextStyle(
+                                                                fontSize: 12)),
+                                                      Text(
+                                                        type == 'Private'
+                                                            ? 'Private'
+                                                            : '${participants.length} members',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: tileColor
+                                                                      .computeLuminance() >
+                                                                  0.5
+                                                              ? Colors.black
+                                                                  .withOpacity(
+                                                                      0.6)
+                                                              : Colors.white
+                                                                  .withOpacity(
+                                                                      0.8),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ],
                                               ),
-                                            ],
-                                          ),
-                                          trailing:
-                                              FutureBuilder<QuerySnapshot>(
-                                            future: FirebaseFirestore.instance
-                                                .collection('conversations')
-                                                .doc(topic)
-                                                .collection('messages')
-                                                .orderBy('timestamp',
-                                                    descending: true)
-                                                .limit(1)
-                                                .get(),
-                                            builder:
-                                                (context, messageSnapshot) {
-                                              if (!messageSnapshot.hasData) {
-                                                return const SizedBox.shrink();
-                                              }
+                                              trailing:
+                                                  FutureBuilder<QuerySnapshot>(
+                                                future: FirebaseFirestore
+                                                    .instance
+                                                    .collection('conversations')
+                                                    .doc(topic)
+                                                    .collection('messages')
+                                                    .orderBy('timestamp',
+                                                        descending: true)
+                                                    .limit(1)
+                                                    .get(),
+                                                builder:
+                                                    (context, messageSnapshot) {
+                                                  if (!messageSnapshot
+                                                      .hasData) {
+                                                    return const SizedBox
+                                                        .shrink();
+                                                  }
 
-                                              if (messageSnapshot
-                                                  .data!.docs.isEmpty) {
-                                                return const SizedBox.shrink();
-                                              }
+                                                  if (messageSnapshot
+                                                      .data!.docs.isEmpty) {
+                                                    return const SizedBox
+                                                        .shrink();
+                                                  }
 
-                                              var message = messageSnapshot
-                                                  .data!.docs.first;
-                                              Timestamp? timestamp =
-                                                  message['timestamp'];
+                                                  var message = messageSnapshot
+                                                      .data!.docs.first;
+                                                  Timestamp? timestamp =
+                                                      message['timestamp'];
 
-                                              return Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
+                                                  return Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
                                                         horizontal: 8,
                                                         vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: tileColor
-                                                              .computeLuminance() >
-                                                          0.5
-                                                      ? Colors.black
-                                                          .withOpacity(0.1)
-                                                      : Colors.white
-                                                          .withOpacity(0.2),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  _formatTimestamp(timestamp),
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: tileColor
-                                                                .computeLuminance() >
-                                                            0.5
-                                                        ? Colors.black
-                                                        : Colors.white,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                          onTap: () {
-                                            // Mark conversation as read
-                                            messageTracker
-                                                .markConversationAsRead(topic);
-
-                                            // Navigate to chat screen
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    ChatScreen(
-                                                  userId: userId,
-                                                  chatTitle: topic,
-                                                  chatType: type,
-                                                  messageTracker:
-                                                      messageTracker,
-                                                ),
+                                                    decoration: BoxDecoration(
+                                                      color: tileColor
+                                                                  .computeLuminance() >
+                                                              0.5
+                                                          ? Colors.black
+                                                              .withOpacity(0.1)
+                                                          : Colors.white
+                                                              .withOpacity(0.2),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                    ),
+                                                    child: Text(
+                                                      _formatTimestamp(
+                                                          timestamp),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: tileColor
+                                                                    .computeLuminance() >
+                                                                0.5
+                                                            ? Colors.black
+                                                            : Colors.white,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
                                               ),
+                                              onTap: () {
+                                                // Mark conversation as read
+                                                messageTracker
+                                                    .markConversationAsRead(
+                                                        topic);
+
+                                                // Navigate to chat screen
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (context) =>
+                                                        ChatScreen(
+                                                      userId: userId,
+                                                      chatTitle: topic,
+                                                      chatType: type,
+                                                      messageTracker:
+                                                          messageTracker,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
                                             );
                                           },
-                                        );
-                                      },
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),

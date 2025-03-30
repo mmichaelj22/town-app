@@ -325,7 +325,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final likes = data['likes'] ?? [];
     final bool userLiked = likes.contains(widget.userId);
     final int likeCount = likes.length;
-    final String senderId = data['senderId'] as String? ?? '';
 
     // Create animation controller if it doesn't exist for this message
     if (!_bubbleAnimations.containsKey(messageId)) {
@@ -340,7 +339,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       curve: Curves.elasticOut,
     );
 
-    // Return the message bubble directly
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
       child: Row(
@@ -505,6 +503,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(18),
                       onDoubleTap: () => _toggleLike(messageId, likes),
+                      onLongPress: () {
+                        // Show reaction options
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Message Actions'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: Icon(
+                                    userLiked
+                                        ? Icons.thumb_down
+                                        : Icons.thumb_up,
+                                    color: chatColor,
+                                  ),
+                                  title: Text(userLiked ? 'Unlike' : 'Like'),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _toggleLike(messageId, likes);
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.copy,
+                                      color: Colors.blue),
+                                  title: const Text('Copy Text'),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    // Copy message text to clipboard
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Message copied to clipboard')),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
