@@ -11,6 +11,8 @@ import 'screens/intro_animation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme/app_theme.dart';
 
+const bool kResetIntroOnRestart = false; // Set to false for production
+
 List<CameraDescription> cameras = [];
 
 Future<bool> requestCameraPermission() async {
@@ -84,7 +86,7 @@ class AnimationGate extends StatefulWidget {
 
 class _AnimationGateState extends State<AnimationGate> {
   bool _loading = true;
-  bool _showIntro = false;
+  bool _showIntro = true;
 
   @override
   void initState() {
@@ -93,12 +95,14 @@ class _AnimationGateState extends State<AnimationGate> {
   }
 
   Future<void> _checkStatus() async {
-    // Check if user is signed in
-    User? currentUser = FirebaseAuth.instance.currentUser;
+    // print("Checking animation status...");
 
-    // Check if intro has been seen
+    User? currentUser = FirebaseAuth.instance.currentUser;
+    // print("Current user: ${currentUser?.uid ?? 'null'}");
+
     final prefs = await SharedPreferences.getInstance();
     final hasSeenIntro = prefs.getBool('intro_seen') ?? false;
+    // print("Has seen intro: $hasSeenIntro");
 
     setState(() {
       // Show intro if user is not signed in and hasn't seen it before

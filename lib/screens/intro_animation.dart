@@ -208,7 +208,7 @@ class _IntroAnimationState extends State<IntroAnimation>
                     scale: _logoScaleAnimation,
                     child: Image.asset(
                       'assets/images/logo.png',
-                      height: 120,
+                      height: 160,
                     ),
                   ),
                 ),
@@ -216,17 +216,17 @@ class _IntroAnimationState extends State<IntroAnimation>
                 const SizedBox(height: 24),
 
                 // App name
-                FadeTransition(
-                  opacity: _logoFadeAnimation,
-                  child: const Text(
-                    'Town',
-                    style: TextStyle(
-                      fontSize: 40,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
+                // FadeTransition(
+                //   opacity: _logoFadeAnimation,
+                //   child: const Text(
+                //     'Town',
+                //     style: TextStyle(
+                //       fontSize: 40,
+                //       fontWeight: FontWeight.bold,
+                //       letterSpacing: 1.2,
+                //     ),
+                //   ),
+                // ),
 
                 const SizedBox(height: 16),
 
@@ -234,11 +234,12 @@ class _IntroAnimationState extends State<IntroAnimation>
                 FadeTransition(
                   opacity: _taglineAnimation,
                   child: Text(
-                    'Connect with people around you',
+                    'the square where neighbors meet',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey[700],
                       letterSpacing: 0.5,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
                 ),

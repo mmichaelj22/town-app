@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_header.dart';
 import '../utils/blocked_users_screen.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -384,7 +385,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             subtitle: 'Sign out of your account',
                             onTap: () => _showLogoutConfirmation(context),
                             showBorder: false,
+                            // Import kDebugMode at the top of the file
                           ),
+                          if (kDebugMode)
+                            _buildSettingsItem(
+                              context: context,
+                              icon: Icons.bug_report,
+                              iconColor: Colors.teal,
+                              title: 'Developer Options',
+                              subtitle: 'Debug tools for development',
+                              onTap: () => _showDeveloperOptions(context),
+                              showBorder:
+                                  true, // Add a border if it's not the last item
+                            ),
                         ],
                       ),
                     ),
@@ -408,6 +421,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeveloperOptions(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Developer Options'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              title: const Text('Reset Intro Animation'),
+              subtitle: const Text('Show intro on next app start'),
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('intro_seen', false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content:
+                          Text('Intro animation will show on next restart')),
+                );
+                Navigator.pop(context);
+              },
+            ),
+            // Add other debug options as needed
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CLOSE'),
           ),
         ],
       ),
