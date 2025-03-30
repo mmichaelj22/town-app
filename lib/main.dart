@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:camera/camera.dart';
-import 'package:permission_handler/permission_handler.dart'; // Add this import
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/intro_animation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme/app_theme.dart';
 
 List<CameraDescription> cameras = [];
 
-// Add this function
 Future<bool> requestCameraPermission() async {
   try {
     PermissionStatus status = await Permission.camera.status;
@@ -48,8 +49,6 @@ void main() async {
   try {
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
-    // Remove the sign out line
-    // await FirebaseAuth.instance.signOut();
     print("Firebase initialized successfully");
   } catch (e) {
     print("Error initializing Firebase: $e");
@@ -65,10 +64,66 @@ class TownApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Town',
-      theme: AppTheme.theme, // Use your custom theme
-      home: AuthGate(),
+      theme: AppTheme.theme,
+      initialRoute: '/',
+      routes: {
+        '/': (context) => AnimationGate(),
+        '/signin': (context) => SignInScreen(cameras: cameras),
+        '/register': (context) => RegisterScreen(cameras: cameras),
+        '/main': (context) => MainScreen(),
+      },
       debugShowCheckedModeBanner: false,
     );
+  }
+}
+
+class AnimationGate extends StatefulWidget {
+  @override
+  _AnimationGateState createState() => _AnimationGateState();
+}
+
+class _AnimationGateState extends State<AnimationGate> {
+  bool _loading = true;
+  bool _showIntro = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    // Check if user is signed in
+    User? currentUser = FirebaseAuth.instance.currentUser;
+
+    // Check if intro has been seen
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenIntro = prefs.getBool('intro_seen') ?? false;
+
+    setState(() {
+      // Show intro if user is not signed in and hasn't seen it before
+      _showIntro = !hasSeenIntro && currentUser == null;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // If intro should be shown
+    if (_showIntro) {
+      return IntroAnimation(
+        nextScreen: AuthGate(),
+      );
+    }
+
+    // Otherwise go straight to auth gate
+    return AuthGate();
   }
 }
 
@@ -86,9 +141,12 @@ class AuthGate extends StatelessWidget {
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
         }
+
+        // If no user is signed in, go to sign-in screen instead of register
         if (!snapshot.hasData) {
-          return RegisterScreen(cameras: cameras);
+          return SignInScreen(cameras: cameras);
         }
+
         return const MainScreen();
       },
     );

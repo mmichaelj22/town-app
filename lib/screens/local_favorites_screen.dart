@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/user.dart';
 import '../theme/app_theme.dart';
-import '../models/user.dart';
 
 class LocalFavoritesScreen extends StatefulWidget {
   final String userId;

@@ -76,11 +76,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // Method to handle logout
+// Method to handle logout in settings_screen.dart
   Future<void> _logout(BuildContext context) async {
     try {
       await FirebaseAuth.instance.signOut();
-      // Navigate back to login page - will happen automatically due to AuthGate
+
+      // Navigate to the root of the app (which will show SignInScreen via AuthGate)
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+
+      // Optional: Show a success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Successfully logged out')),
       );

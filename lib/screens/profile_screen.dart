@@ -1,10 +1,6 @@
-// lib/screens/profile_screen.dart - Updated with new sections
-
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_header.dart';
 import '../models/user.dart';
@@ -540,7 +536,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             if (userData!.localFavorites.isEmpty)
               const Center(
                 child: Padding(
-                  padding: EdgeInsets.all(16.0),
+                  padding: EdgeInsets.all(16),
                   child: Text(
                     'Tap edit to add your local favorites',
                     style: TextStyle(
