@@ -384,7 +384,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             title: 'Log Out',
                             subtitle: 'Sign out of your account',
                             onTap: () => _showLogoutConfirmation(context),
-                            showBorder: false,
+                            showBorder: true,
                             // Import kDebugMode at the top of the file
                           ),
                           if (kDebugMode)

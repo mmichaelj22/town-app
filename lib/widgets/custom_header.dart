@@ -36,6 +36,7 @@ class CustomHeader extends StatelessWidget {
           ),
         ),
         child: FlexibleSpaceBar(
+          titlePadding: const EdgeInsets.only(left: 76, bottom: 8, right: 16),
           title: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             crossAxisAlignment: CrossAxisAlignment.start,

@@ -235,7 +235,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
             // Name
             Text(
@@ -252,7 +252,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -547,57 +546,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               )
             else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: userData!.localFavorites.length,
-                itemBuilder: (context, index) {
-                  final favorite = userData!.localFavorites[index];
+              Column(
+                children: userData!.localFavorites.map((favorite) {
+                  final IconData iconData =
+                      _getIconForFavoriteType(favorite.type);
 
-                  IconData iconData;
-                  switch (favorite.type.toLowerCase()) {
-                    case 'restaurant':
-                      iconData = Icons.restaurant;
-                      break;
-                    case 'coffee shop':
-                      iconData = Icons.coffee;
-                      break;
-                    case 'park':
-                      iconData = Icons.park;
-                      break;
-                    case 'museum':
-                      iconData = Icons.museum;
-                      break;
-                    case 'bar':
-                      iconData = Icons.local_bar;
-                      break;
-                    default:
-                      iconData = Icons.place;
-                  }
-
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppTheme.blue.withOpacity(0.2),
-                      child: Icon(iconData, color: AppTheme.blue),
-                    ),
-                    title: Text(
-                      favorite.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      favorite.description.isEmpty
-                          ? favorite.type
-                          : '${favorite.type} • ${favorite.description}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0), // Reduced padding
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero, // Remove default padding
+                      leading: CircleAvatar(
+                        backgroundColor: AppTheme.blue.withOpacity(0.2),
+                        child: Icon(iconData, color: AppTheme.blue),
+                      ),
+                      title: Text(
+                        favorite.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        favorite.description.isEmpty
+                            ? favorite.type
+                            : '${favorite.type} • ${favorite.description}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   );
-                },
+                }).toList(),
               ),
           ],
         ),
       ),
     );
+  }
+
+// Helper method to get appropriate icon based on favorite type
+  IconData _getIconForFavoriteType(String type) {
+    switch (type.toLowerCase()) {
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'coffee shop':
+        return Icons.coffee;
+      case 'bar':
+        return Icons.local_bar;
+      case 'park':
+        return Icons.park;
+      case 'museum':
+        return Icons.museum;
+      // Add other cases as needed
+      default:
+        return Icons.place;
+    }
   }
 
   Widget _buildPersonalInfoCard() {
