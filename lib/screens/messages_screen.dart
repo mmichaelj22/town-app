@@ -257,7 +257,7 @@ class MessagesScreen extends StatelessWidget {
                     );
                   }).toList();
 
-// Sort by most recent activity (with null safety)
+                  // Sort by most recent activity (with null safety)
                   visibleConversations.sort((a, b) {
                     // Safely extract timestamps with null checks
                     Timestamp? aLastActivity;

@@ -20,6 +20,7 @@ dependencies:
   shared_preferences: ^2.2.2
   http: ^1.1.0
   timeago: ^3.3.0  # For "time ago" formatting in status messages
+  emoji_picker_flutter: ^1.6.4
 
 dev_dependencies:
   flutter_test:

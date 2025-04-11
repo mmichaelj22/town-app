@@ -4,6 +4,14 @@ import '../theme/app_theme.dart';
 import '../utils/conversation_manager.dart';
 import '../utils/user_blocking_service.dart';
 import '../services/message_tracker.dart';
+import 'report_screen.dart';
+import 'dart:io';
+import 'package:camera/camera.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path/path.dart' as path;
+import '../main.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/foundation.dart' as foundation;
 
 class ChatScreen extends StatefulWidget {
   final String userId;
@@ -29,6 +37,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isComposing = false;
   List<String> participants = [];
   Color chatColor = AppTheme.blue; // Default color
+  bool _showEmojiPicker = false;
+  FocusNode _messageFocusNode = FocusNode();
 
   // For the like animation
   bool _showingLikeAnimation = false;
@@ -48,6 +58,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (widget.messageTracker != null) {
       widget.messageTracker!.markConversationAsRead(widget.chatTitle);
     }
+
+    // Add this listener for emoji picker
+    _messageFocusNode.addListener(() {
+      if (_messageFocusNode.hasFocus) {
+        setState(() {
+          _showEmojiPicker = false;
+        });
+      }
+    });
   }
 
   @override
@@ -56,6 +75,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _bubbleAnimations.forEach((_, controller) => controller.dispose());
     _messageController.dispose();
     _scrollController.dispose();
+    _messageFocusNode.dispose();
     super.dispose();
   }
 
@@ -321,6 +341,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final messageId = message.id;
     final data = message.data() as Map<String, dynamic>;
     final messageText = data['text'] as String;
+    final imageUrl = data['imageUrl'] as String?; // Add this line
     final timestamp = data['timestamp'] as Timestamp?;
     final likes = data['likes'] ?? [];
     final bool userLiked = likes.contains(widget.userId);
@@ -414,14 +435,110 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           ),
                         ),
 
-                      // Message text
-                      Text(
-                        messageText,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: isMe ? Colors.white : Colors.black87,
+                      // Image message (if present)
+                      if (imageUrl != null)
+                        GestureDetector(
+                          onTap: () {
+                            // Show full screen image
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => Scaffold(
+                                  appBar: AppBar(
+                                    backgroundColor: Colors.black,
+                                    iconTheme: const IconThemeData(
+                                        color: Colors.white),
+                                  ),
+                                  body: Container(
+                                    color: Colors.black,
+                                    child: Center(
+                                      child: InteractiveViewer(
+                                        minScale: 0.5,
+                                        maxScale: 3.0,
+                                        child: Image.network(
+                                          imageUrl,
+                                          loadingBuilder: (context, child,
+                                              loadingProgress) {
+                                            if (loadingProgress == null)
+                                              return child;
+                                            return Center(
+                                              child: CircularProgressIndicator(
+                                                value: loadingProgress
+                                                            .expectedTotalBytes !=
+                                                        null
+                                                    ? loadingProgress
+                                                            .cumulativeBytesLoaded /
+                                                        loadingProgress
+                                                            .expectedTotalBytes!
+                                                    : null,
+                                              ),
+                                            );
+                                          },
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return const Center(
+                                              child: Text('Error loading image',
+                                                  style: TextStyle(
+                                                      color: Colors.white)),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              imageUrl,
+                              width: 200,
+                              fit: BoxFit.cover,
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return SizedBox(
+                                  height: 150,
+                                  width: 200,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      value:
+                                          loadingProgress.expectedTotalBytes !=
+                                                  null
+                                              ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                              : null,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 150,
+                                  width: 200,
+                                  color: Colors.grey.shade300,
+                                  child: const Center(
+                                    child: Icon(Icons.error, color: Colors.red),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
-                      ),
+
+                      // Show text only if it's not a default photo message
+                      if (!(imageUrl != null && messageText == '📷 Photo'))
+                        Text(
+                          messageText,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isMe ? Colors.white : Colors.black87,
+                          ),
+                        ),
 
                       // Timestamp
                       Padding(
@@ -652,7 +769,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
 
@@ -753,9 +870,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     : const Text('Report inappropriate behavior in this chat'),
                 onTap: () {
                   Navigator.pop(context);
-                  // Implement report functionality
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Report feature coming soon')),
+                  // Navigate to the Report Screen
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReportScreen(
+                        currentUserId: widget.userId,
+                        conversationId: widget.chatTitle,
+                        participants: participants,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -889,7 +1013,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   child: SafeArea(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      padding: const EdgeInsets.only(
+                          left: 16.0, right: 8.0, bottom: 0),
                       child: Row(
                         children: [
                           IconButton(
@@ -897,6 +1022,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 color: Colors.white),
                             onPressed: () => Navigator.pop(context),
                           ),
+                          // Re-adding the avatar/circle
                           widget.chatType == 'Private' ||
                                   widget.chatType == 'Private Group'
                               ? CircleAvatar(
@@ -924,7 +1050,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 Text(
                                   widget.chatType == 'Private'
@@ -956,7 +1082,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             icon: const Icon(Icons.info_outline,
                                 color: Colors.white),
                             onPressed: () {
-                              // Show chat info (members, etc.)
                               _showChatInfoOptions(context);
                             },
                           ),
@@ -1086,15 +1211,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         // Add attachment button
                         IconButton(
                           icon: Icon(
-                            Icons.add_circle_outline,
+                            Icons.camera_alt, // Changed to camera icon
                             color: chatColor,
                           ),
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Attachments coming soon!')),
-                            );
-                          },
+                          onPressed:
+                              _takePicture, // Changed to your new function
                         ),
                         // Text input field
                         Expanded(
@@ -1115,6 +1236,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                         horizontal: 16.0),
                                     child: TextField(
                                       controller: _messageController,
+                                      focusNode: _messageFocusNode,
                                       decoration: const InputDecoration(
                                         hintText: 'Type a message',
                                         border: InputBorder.none,
@@ -1135,15 +1257,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 IconButton(
                                   icon: Icon(
                                     Icons.emoji_emotions_outlined,
-                                    color: Colors.grey[600],
+                                    color: _showEmojiPicker
+                                        ? chatColor
+                                        : Colors.grey[600],
                                   ),
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              'Emoji picker coming soon!')),
-                                    );
-                                  },
+                                  onPressed: _toggleEmojiPicker,
                                 ),
                               ],
                             ),
@@ -1162,6 +1280,40 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                 ),
               ),
+              if (_showEmojiPicker)
+                SizedBox(
+                  height: 250,
+                  child: EmojiPicker(
+                    onEmojiSelected: (category, emoji) {
+                      _onEmojiSelected(emoji.emoji);
+                    },
+                    config: Config(
+                      columns: 7,
+                      emojiSizeMax: 32.0,
+                      verticalSpacing: 0,
+                      horizontalSpacing: 0,
+                      initCategory: Category.SMILEYS,
+                      bgColor: const Color(0xFFF2F2F2),
+                      indicatorColor: chatColor,
+                      iconColor: Colors.grey,
+                      iconColorSelected: chatColor,
+                      // Remove or comment out this line:
+                      // progressIndicatorColor: chatColor,
+                      backspaceColor: chatColor,
+                      skinToneDialogBgColor: Colors.white,
+                      skinToneIndicatorColor: Colors.grey,
+                      enableSkinTones: true,
+                      //showRecentsTab: true,
+                      //recentsLimit: 28,
+                      noRecents: const Text('No Recents',
+                          style:
+                              TextStyle(fontSize: 20, color: Colors.black26)),
+                      tabIndicatorAnimDuration: kTabScrollDuration,
+                      categoryIcons: const CategoryIcons(),
+                      buttonMode: ButtonMode.MATERIAL,
+                    ),
+                  ),
+                ),
             ],
           ),
 
@@ -1199,5 +1351,188 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  Future<void> _takePicture() async {
+    if (cameras.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No camera available')),
+      );
+      return;
+    }
+
+    try {
+      // Initialize the camera controller
+      final cameraController = CameraController(
+        cameras[0], // Front camera for selfies
+        ResolutionPreset.medium,
+      );
+      await cameraController.initialize();
+
+      // Show camera UI
+      final imageFile = await Navigator.push<File>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: const Text('Take Photo'),
+              backgroundColor: chatColor,
+            ),
+            body: Column(
+              children: [
+                Expanded(
+                  child: CameraPreview(cameraController),
+                ),
+                Container(
+                  color: Colors.black,
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      FloatingActionButton(
+                        backgroundColor: Colors.white,
+                        child:
+                            const Icon(Icons.camera_alt, color: Colors.black),
+                        onPressed: () async {
+                          try {
+                            final XFile photo =
+                                await cameraController.takePicture();
+                            Navigator.pop(context, File(photo.path));
+                          } catch (e) {
+                            print('Error taking picture: $e');
+                            Navigator.pop(context);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 56), // Balance for the close button
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // Dispose the controller
+      await cameraController.dispose();
+
+      // If an image was taken, upload and send it
+      if (imageFile != null) {
+        await _sendImageMessage(imageFile);
+      }
+    } catch (e) {
+      print('Error in camera: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera error: $e')),
+      );
+    }
+  }
+
+// Add method to upload and send image
+  Future<void> _sendImageMessage(File imageFile) async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sending image...')),
+      );
+
+      // Upload to Firebase Storage
+      final fileName = path.basename(imageFile.path);
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('chat_images')
+          .child(widget.chatTitle)
+          .child('${DateTime.now().millisecondsSinceEpoch}_$fileName');
+
+      final uploadTask = storageRef.putFile(imageFile);
+      await uploadTask.whenComplete(() => print('Image upload complete'));
+
+      // Get download URL
+      final imageUrl = await storageRef.getDownloadURL();
+
+      // Add message to chat
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(widget.chatTitle)
+          .collection('messages')
+          .add({
+        'text': '📷 Photo', // Text placeholder for non-image compatible clients
+        'imageUrl': imageUrl, // URL to the uploaded image
+        'senderId': widget.userId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'likes': [],
+      });
+
+      // Update conversation's last activity
+      await FirebaseFirestore.instance
+          .collection('conversations')
+          .doc(widget.chatTitle)
+          .update({
+        'lastActivity': FieldValue.serverTimestamp(),
+      });
+
+      // Dismiss loading indicator
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image sent!')),
+      );
+    } catch (e) {
+      print('Error sending image: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending image: $e')),
+      );
+    }
+  }
+
+// Add this method to toggle emoji picker
+  void _toggleEmojiPicker() {
+    setState(() {
+      _showEmojiPicker = !_showEmojiPicker;
+      if (_showEmojiPicker) {
+        // Hide keyboard when showing emoji picker
+        _messageFocusNode.unfocus();
+      } else {
+        // Show keyboard when hiding emoji picker
+        _messageFocusNode.requestFocus();
+      }
+    });
+  }
+
+// Add method to handle emoji selection
+  void _onEmojiSelected(String emoji) {
+    setState(() {
+      // Get current text and selection
+      final text = _messageController.text;
+      final selection = _messageController.selection;
+
+      // Handle case when there is no valid selection
+      if (selection.baseOffset < 0) {
+        // No valid selection, append emoji to the end
+        _messageController.text = text + emoji;
+        // Move cursor to end
+        _messageController.selection = TextSelection.collapsed(
+          offset: _messageController.text.length,
+        );
+      } else {
+        // Insert emoji at current cursor position
+        final newText =
+            text.replaceRange(selection.start, selection.end, emoji);
+
+        // Update text and cursor position
+        _messageController.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(
+            offset: selection.baseOffset + emoji.length,
+          ),
+        );
+      }
+
+      _isComposing = _messageController.text.isNotEmpty;
+    });
   }
 }
