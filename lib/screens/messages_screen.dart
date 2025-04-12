@@ -7,6 +7,7 @@ import '../widgets/custom_header.dart';
 import '../services/message_tracker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import '../widgets/message_list_tile.dart';
 
 class MessagesScreen extends StatefulWidget {
   final String userId;
@@ -29,6 +30,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   Map<String, int> _unreadCounts = {};
+  String _currentFilter = 'All'; // 'All', 'Private', 'Private Group', 'Group'
 
   // Then add the methods:
   @override
@@ -62,16 +64,91 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
+  Widget _buildFilterToggle() {
+    return Container(
+      height: 40,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          _buildFilterOption('All', Icons.all_inbox),
+          _buildFilterOption('Private', Icons.person),
+          _buildFilterOption('Private Group', Icons.group),
+          _buildFilterOption('Group', Icons.public),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterOption(String filter, IconData icon) {
+    final isSelected = _currentFilter == filter;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _currentFilter = filter;
+          });
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.blue : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : Colors.grey[600],
+              ),
+              if (filter != 'Private Group') // Text is too long for this one
+                Padding(
+                  padding: const EdgeInsets.only(left: 4.0),
+                  child: Text(
+                    filter,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : Colors.grey[600],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _processConversationsSnapshot(QuerySnapshot snapshot) async {
     if (!mounted) return;
 
     try {
       // Filter conversations based on visibility rule
-      final visibleConversations = snapshot.docs.where((doc) {
-        return ConversationManager.shouldShowOnMessagesScreen(
+      List<QueryDocumentSnapshot> visibleConversations =
+          snapshot.docs.where((doc) {
+        bool isVisible = ConversationManager.shouldShowOnMessagesScreen(
           userId: widget.userId,
           conversation: doc,
         );
+
+        if (!isVisible) return false;
+
+        // Apply type filter if not "All"
+        if (_currentFilter != 'All') {
+          final data = doc.data() as Map<String, dynamic>?;
+          if (data == null) return false;
+
+          final type = data['type'] as String? ?? 'Group';
+          return type == _currentFilter;
+        }
+
+        return true;
       }).toList();
 
       // Process unread counts efficiently
@@ -287,14 +364,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // Custom gradient header (keep this part)
+          // Custom gradient header
           CustomHeader(
             title: 'Messages',
             subtitle: 'Your conversations',
             primaryColor: AppTheme.green,
-            actions: [
-              // Keep your existing actions
-            ],
+            // Remove the filter icon action since we're using the toggle instead
+          ),
+
+          // Add filter toggle
+          SliverToBoxAdapter(
+            child: _buildFilterToggle(),
           ),
 
           // Error message if needed
@@ -336,7 +416,36 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   : SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
-                          return _buildConversationTile(_conversations[index]);
+                          return MessageListTile(
+                            conversation: _conversations[index],
+                            currentUserId: widget.userId,
+                            unreadCount:
+                                _unreadCounts[_conversations[index].id] ?? 0,
+                            onTap: () {
+                              final conversation = _conversations[index];
+                              final conversationId = conversation.id;
+                              final data =
+                                  conversation.data() as Map<String, dynamic>?;
+                              final type = data?['type'] as String? ?? 'Group';
+
+                              // Mark conversation as read
+                              widget.messageTracker
+                                  .markConversationAsRead(conversationId);
+
+                              // Navigate to chat screen
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ChatScreen(
+                                    userId: widget.userId,
+                                    chatTitle: conversationId,
+                                    chatType: type,
+                                    messageTracker: widget.messageTracker,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
                         },
                         childCount: _conversations.length,
                       ),

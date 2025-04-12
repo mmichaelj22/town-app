@@ -6,6 +6,7 @@ import 'chat_screen.dart';
 import 'conversation_starter.dart';
 import '../utils/conversation_manager.dart';
 import '../utils/blocking_utils.dart';
+import '../widgets/conversation_square.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -248,28 +249,30 @@ class _HomeScreenState extends State<HomeScreen> {
       itemCount: _visibleConversations.length,
       itemBuilder: (context, index) {
         final conversation = _visibleConversations[index];
-        final data = conversation.data() as Map<String, dynamic>?;
-        if (data == null) return const SizedBox();
 
-        final type = data['type'] as String? ?? 'Group';
+        return ConversationSquare(
+          conversation: conversation,
+          userId: widget.userId,
+          onTap: () {
+            final data = conversation.data() as Map<String, dynamic>?;
+            if (data == null) return;
 
-        // Memoize color calculation
-        final colorIndex = index % squareColors.length;
-        final color = squareColors[colorIndex];
+            final String title = data['title'] as String? ?? 'Unnamed';
+            final String type = data['type'] as String? ?? 'Group';
 
-        if (type == 'Private') {
-          return _buildPrivateChatTile(
-            context,
-            conversation,
-            color,
-          );
-        } else {
-          return _buildGroupChatTile(
-            context,
-            conversation,
-            color,
-          );
-        }
+            widget.onJoinConversation(title, type);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ChatScreen(
+                  userId: widget.userId,
+                  chatTitle: title,
+                  chatType: type,
+                ),
+              ),
+            );
+          },
+        );
       },
     );
   }
