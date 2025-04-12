@@ -195,6 +195,7 @@ class MessageTracker {
         int unreadCount = 0;
         try {
           // Try with compound query first (requires index)
+          // Important: Only count messages from other users, not from current user
           final messagesQuery = await FirebaseFirestore.instance
               .collection('conversations')
               .doc(conversationId)
@@ -222,7 +223,7 @@ class MessageTracker {
             return timestamp != null &&
                 timestamp.compareTo(lastReadTimestamp) > 0 &&
                 senderId != null &&
-                senderId != _currentUserId;
+                senderId != _currentUserId; // Only count messages from others
           }).length;
         }
 
@@ -260,6 +261,7 @@ class MessageTracker {
         int unreadCount = 0;
         try {
           // Try with compound query first (requires index)
+          // Only count messages from other users
           final messagesQuery = await FirebaseFirestore.instance
               .collection('conversations')
               .doc(conversationId)
@@ -287,7 +289,7 @@ class MessageTracker {
             return timestamp != null &&
                 timestamp.compareTo(lastReadTimestamp) > 0 &&
                 senderId != null &&
-                senderId != _currentUserId;
+                senderId != _currentUserId; // Only count messages from others
           }).length;
         }
 

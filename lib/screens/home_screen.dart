@@ -616,11 +616,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleCreateConversation(BuildContext context, String topic,
       String type, List<String> recipients) async {
     try {
-      // Get current user location
+      // Get user location for origin
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.userId)
           .get();
+
       if (!userDoc.exists) {
         throw Exception('User data not found');
       }
@@ -628,6 +629,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final userData = userDoc.data() as Map<String, dynamic>;
       final userLat = userData['latitude'] as double? ?? 0.0;
       final userLon = userData['longitude'] as double? ?? 0.0;
+      final userName = userData['name'] as String? ?? 'User';
 
       // Create title based on the type and topic
       String title = topic;
@@ -659,14 +661,14 @@ class _HomeScreenState extends State<HomeScreen> {
           'likes': [],
         });
       } else {
-        // For group chats, add a system message about creation
+        // For group chats, add a first message from the creator (not system)
         await FirebaseFirestore.instance
             .collection('conversations')
             .doc(title)
             .collection('messages')
             .add({
-          'text': 'Group created: $topic',
-          'senderId': 'system',
+          'text': topic,
+          'senderId': widget.userId,
           'timestamp': FieldValue.serverTimestamp(),
           'likes': [],
         });

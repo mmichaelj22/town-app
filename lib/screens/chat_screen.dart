@@ -89,13 +89,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (chatDoc.exists) {
         final data = chatDoc.data() as Map<String, dynamic>?;
         if (data != null && data.containsKey('participants')) {
-          setState(() {
-            participants = List<String>.from(data['participants']);
-          });
+          // Check if widget is still mounted before calling setState
+          if (mounted) {
+            setState(() {
+              participants = List<String>.from(data['participants']);
+            });
+          }
         }
       }
     } catch (e) {
       print("Error loading participants: $e");
+      // Do not call setState if not mounted
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading participants: $e')),
+        );
+      }
     }
   }
 
@@ -334,14 +343,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
-  // END BLOCKING FUNCTIONALITY
-
+  // Fix for profile image error in the user processing
   Widget _buildMessageBubble(
       DocumentSnapshot message, bool isMe, String sender) {
     final messageId = message.id;
     final data = message.data() as Map<String, dynamic>;
     final messageText = data['text'] as String;
-    final imageUrl = data['imageUrl'] as String?; // Add this line
+    final imageUrl = data['imageUrl'] as String?;
     final timestamp = data['timestamp'] as Timestamp?;
     final likes = data['likes'] ?? [];
     final bool userLiked = likes.contains(widget.userId);
@@ -904,13 +912,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
 // Add these new methods to handle the functionality
 
-// Method to add a friend
+  // Method to add a friend
   Future<void> _addFriend(String friendId, String friendName) async {
     try {
-      // Show loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Adding friend...')),
-      );
+      // Check if the widget is still mounted before showing the SnackBar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Adding friend...')),
+        );
+      }
 
       // Add to current user's friends list
       await FirebaseFirestore.instance
@@ -920,20 +930,56 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         'friends': FieldValue.arrayUnion([friendName]),
       });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$friendName added as friend')),
-      );
+      // Check if the widget is still mounted before showing the SnackBar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$friendName added as friend')),
+        );
+      }
     } catch (e) {
       print("Error adding friend: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error adding friend: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding friend: $e')),
+        );
+      }
     }
   }
 
-// Method to show leave confirmation
+  // Method to leave conversation
+  Future<void> _leaveConversation() async {
+    try {
+      // Remove user from participants using the ConversationManager
+      await ConversationManager.removeParticipant(
+        widget.chatTitle,
+        widget.userId,
+      );
+
+      // Show success message and go back
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You left the conversation')),
+        );
+      }
+
+      // Pop back to main screen
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } catch (e) {
+      print("Error leaving conversation: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error leaving conversation: $e')),
+        );
+      }
+    }
+  }
+
+  // Method to show leave confirmation
   void _showLeaveConfirmation(BuildContext context) {
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -957,30 +1003,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ],
       ),
     );
-  }
-
-// Method to leave conversation
-  Future<void> _leaveConversation() async {
-    try {
-      // Remove user from participants
-      await FirebaseFirestore.instance
-          .collection('conversations')
-          .doc(widget.chatTitle)
-          .update({
-        'participants': FieldValue.arrayRemove([widget.userId]),
-      });
-
-      // Show success message and go back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You left the conversation')),
-      );
-      Navigator.pop(context);
-    } catch (e) {
-      print("Error leaving conversation: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error leaving conversation: $e')),
-      );
-    }
   }
 
   @override

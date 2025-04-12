@@ -34,26 +34,48 @@ class FriendsScreen extends StatelessWidget {
       }
 
       // Check if the current user has latitude and longitude
-      if (!currentUserDoc.exists ||
-          !currentUserDoc.data().toString().contains('latitude') ||
-          !currentUserDoc.data().toString().contains('longitude')) {
+      if (!currentUserDoc.exists) {
+        print("Current user document doesn't exist");
+        return nearby;
+      }
+
+      final currentUserData = currentUserDoc.data() as Map<String, dynamic>?;
+      if (currentUserData == null) {
+        print("Current user data is null");
+        return nearby;
+      }
+
+      if (!currentUserData.containsKey('latitude') ||
+          !currentUserData.containsKey('longitude')) {
         print("Current user missing location data");
         return nearby;
       }
 
-      double userLat = currentUserDoc['latitude'] as double;
-      double userLon = currentUserDoc['longitude'] as double;
+      double userLat = currentUserData['latitude'] as double;
+      double userLon = currentUserData['longitude'] as double;
 
-      snapshot.docs.forEach((doc) {
-        if (doc.id != userId &&
-            doc.exists &&
-            doc.data().toString().contains('latitude') &&
-            doc.data().toString().contains('longitude') &&
-            doc.data().toString().contains('name')) {
+      for (var doc in snapshot.docs) {
+        if (doc.id != userId) {
           try {
-            double lat = doc['latitude'] as double;
-            double lon = doc['longitude'] as double;
-            String name = doc['name'] as String;
+            final data = doc.data() as Map<String, dynamic>?;
+            if (data == null) continue;
+
+            // Safely check all required fields
+            if (!data.containsKey('latitude') ||
+                !data.containsKey('longitude') ||
+                !data.containsKey('name')) {
+              continue;
+            }
+
+            double lat = data['latitude'] as double;
+            double lon = data['longitude'] as double;
+            String name = data['name'] as String;
+
+            // Safely get profileImageUrl
+            String profileImageUrl = '';
+            if (data.containsKey('profileImageUrl')) {
+              profileImageUrl = data['profileImageUrl'] as String? ?? '';
+            }
 
             double distanceMeters =
                 Geolocator.distanceBetween(userLat, userLon, lat, lon);
@@ -63,14 +85,14 @@ class FriendsScreen extends StatelessWidget {
               nearby.add({
                 'name': name,
                 'id': doc.id,
-                'profileImageUrl': doc['profileImageUrl'] ?? '',
+                'profileImageUrl': profileImageUrl,
               });
             }
           } catch (e) {
             print("Error processing user ${doc.id}: $e");
           }
         }
-      });
+      }
 
       // Shuffle to avoid giving away proximity information
       nearby.shuffle();

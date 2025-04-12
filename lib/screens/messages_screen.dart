@@ -24,15 +24,13 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
-  // Add these properties here:
   StreamSubscription? _conversationsSubscription;
   List<QueryDocumentSnapshot> _conversations = [];
   bool _isLoading = true;
   String? _errorMessage;
   Map<String, int> _unreadCounts = {};
-  String _currentFilter = 'All'; // 'All', 'Private', 'Private Group', 'Group'
+  String _currentFilter = 'Private'; // Default to Private chats
 
-  // Then add the methods:
   @override
   void initState() {
     super.initState();
@@ -64,72 +62,164 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  Widget _buildFilterToggle() {
+  Widget _buildFilterUI() {
     return Container(
-      height: 40,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(20),
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          _buildFilterOption('All', Icons.all_inbox),
-          _buildFilterOption('Private', Icons.person),
-          _buildFilterOption('Private Group', Icons.group),
-          _buildFilterOption('Group', Icons.public),
+          // Slider on the left (1/3 width)
+          Expanded(
+            flex: 1,
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppTheme.green.withOpacity(0.2),
+                  inactiveTrackColor: Colors.grey[300],
+                  thumbColor: AppTheme.green,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 12.0,
+                  ),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 16.0),
+                  trackHeight: 8.0,
+                  overlayColor: AppTheme.blue.withOpacity(0.2),
+                ),
+                child: Slider(
+                  value: _getValueForFilter(_currentFilter),
+                  min: 0,
+                  max: 2,
+                  divisions: 2,
+                  onChanged: (value) {
+                    String newFilter = _getFilterForValue(value);
+                    if (newFilter != _currentFilter) {
+                      setState(() {
+                        _currentFilter = newFilter;
+                      });
+                      // Re-process conversations with the new filter
+                      _conversationsSubscription?.cancel();
+                      _setupFirestoreListener();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+
+          // Icons in the middle (1/3 width)
+          Expanded(
+            flex: 1,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildFilterIcon(
+                    Icons.person, _currentFilter == 'Private', 'Private'),
+                const SizedBox(width: 8),
+                _buildFilterIcon(Icons.lock, _currentFilter == 'Private Group',
+                    'Private Group'),
+                const SizedBox(width: 8),
+                _buildFilterIcon(
+                    Icons.group, _currentFilter == 'Group', 'Group'),
+              ],
+            ),
+          ),
+
+          // Text label on the right (1/3 width)
+          Expanded(
+            flex: 1,
+            child: Container(
+              alignment: Alignment.center,
+              child: Text(
+                _getLabelForFilter(_currentFilter),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterOption(String filter, IconData icon) {
-    final isSelected = _currentFilter == filter;
+  // Helper method to get the label for a filter
+  String _getLabelForFilter(String filter) {
+    switch (filter) {
+      case 'Private':
+        return 'Private Chat';
+      case 'Private Group':
+        return 'Private Group';
+      case 'Group':
+        return 'Public Group';
+      default:
+        return '';
+    }
+  }
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _currentFilter = filter;
-          });
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.blue : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected ? Colors.white : Colors.grey[600],
-              ),
-              if (filter != 'Private Group') // Text is too long for this one
-                Padding(
-                  padding: const EdgeInsets.only(left: 4.0),
-                  child: Text(
-                    filter,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.white : Colors.grey[600],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
+  // Helper method to build a filter icon
+  Widget _buildFilterIcon(IconData icon, bool isActive, String filterType) {
+    // Determine the color based on the filter type
+    Color iconColor;
+    if (filterType == 'Private') {
+      iconColor = AppTheme.coral; // Theme red for Private Chat
+    } else if (filterType == 'Private Group') {
+      iconColor = AppTheme.orange; // Theme orange for Private Group
+    } else {
+      iconColor = AppTheme.blue; // Theme blue for Public Group
+    }
+
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: isActive ? iconColor : Colors.grey[300],
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        icon,
+        color: isActive ? Colors.white : Colors.grey[600],
+        size: 16,
       ),
     );
+  }
+
+  // Helper method to get the slider value for a filter
+  double _getValueForFilter(String filter) {
+    switch (filter) {
+      case 'Private':
+        return 0;
+      case 'Private Group':
+        return 1;
+      case 'Group':
+        return 2;
+      default:
+        return 0;
+    }
+  }
+
+  // Helper method to get the filter for a slider value
+  String _getFilterForValue(double value) {
+    if (value < 0.5) {
+      return 'Private';
+    } else if (value < 1.5) {
+      return 'Private Group';
+    } else {
+      return 'Group';
+    }
   }
 
   Future<void> _processConversationsSnapshot(QuerySnapshot snapshot) async {
     if (!mounted) return;
 
     try {
-      // Filter conversations based on visibility rule
+      // Filter conversations based on visibility rule and current filter
       List<QueryDocumentSnapshot> visibleConversations =
           snapshot.docs.where((doc) {
         bool isVisible = ConversationManager.shouldShowOnMessagesScreen(
@@ -139,16 +229,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
         if (!isVisible) return false;
 
-        // Apply type filter if not "All"
-        if (_currentFilter != 'All') {
-          final data = doc.data() as Map<String, dynamic>?;
-          if (data == null) return false;
+        // Apply type filter
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data == null) return false;
 
-          final type = data['type'] as String? ?? 'Group';
-          return type == _currentFilter;
-        }
-
-        return true;
+        final type = data['type'] as String? ?? 'Group';
+        return type == _currentFilter; // Always filter by current filter
       }).toList();
 
       // Process unread counts efficiently
@@ -234,97 +320,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
-  Future<List<String>> _getFriends() async {
-    try {
-      DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .get();
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>?;
-        if (data != null && data.containsKey('friends')) {
-          return List<String>.from(data['friends']);
-        }
-      }
-      print("No friends data found for user $widget.userId");
-      return [];
-    } catch (e) {
-      print("Error getting friends: $e");
-      return [];
-    }
-  }
-
-  void _createDummyConversation(BuildContext context) async {
-    try {
-      // Get user location for origin
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .get();
-
-      if (!userDoc.exists) {
-        throw Exception('User data not found');
-      }
-
-      final userData = userDoc.data() as Map<String, dynamic>;
-      final userLat = userData['latitude'] as double? ?? 0.0;
-      final userLon = userData['longitude'] as double? ?? 0.0;
-
-      final String topic = "Test Conversation";
-      final String type = "Private";
-
-      // Create a test conversation with proper location information
-      await ConversationManager.createConversation(
-        title: topic,
-        type: type,
-        creatorId: widget.userId,
-        initialParticipants: [widget.userId],
-        latitude: userLat,
-        longitude: userLon,
-      );
-
-      // Add a test message
-      await FirebaseFirestore.instance
-          .collection('conversations')
-          .doc(topic)
-          .collection('messages')
-          .add({
-        'text': 'This is a test message',
-        'senderId': widget.userId,
-        'timestamp': FieldValue.serverTimestamp(),
-        'likes': [],
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Test conversation created')),
-      );
-    } catch (e) {
-      print("Error creating test conversation: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
-  }
-
-  Future<String> _getLastMessage(String conversationId) async {
-    try {
-      final messagesSnapshot = await FirebaseFirestore.instance
-          .collection('conversations')
-          .doc(conversationId)
-          .collection('messages')
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .get();
-
-      if (messagesSnapshot.docs.isNotEmpty) {
-        return messagesSnapshot.docs.first['text'] ?? 'No message';
-      }
-    } catch (e) {
-      print("Error getting last message: $e");
-    }
-    return 'No messages yet';
-  }
-
   // Get unread message count for a conversation
   Future<int> _getUnreadCount(String conversationId) async {
     try {
@@ -369,12 +364,11 @@ class _MessagesScreenState extends State<MessagesScreen> {
             title: 'Messages',
             subtitle: 'Your conversations',
             primaryColor: AppTheme.green,
-            // Remove the filter icon action since we're using the toggle instead
           ),
 
-          // Add filter toggle
+          // Add filter UI
           SliverToBoxAdapter(
-            child: _buildFilterToggle(),
+            child: _buildFilterUI(),
           ),
 
           // Error message if needed
@@ -416,35 +410,84 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   : SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
-                          return MessageListTile(
-                            conversation: _conversations[index],
-                            currentUserId: widget.userId,
-                            unreadCount:
-                                _unreadCounts[_conversations[index].id] ?? 0,
-                            onTap: () {
-                              final conversation = _conversations[index];
-                              final conversationId = conversation.id;
-                              final data =
-                                  conversation.data() as Map<String, dynamic>?;
-                              final type = data?['type'] as String? ?? 'Group';
+                          final conversation = _conversations[index];
+                          final conversationId = conversation.id;
 
-                              // Mark conversation as read
-                              widget.messageTracker
-                                  .markConversationAsRead(conversationId);
+                          return Dismissible(
+                            key: Key(conversationId),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20.0),
+                              color: Colors.red,
+                              child: const Icon(
+                                Icons.delete,
+                                color: Colors.white,
+                              ),
+                            ),
+                            onDismissed: (direction) {
+                              // Delete the conversation from Firestore
+                              FirebaseFirestore.instance
+                                  .collection('conversations')
+                                  .doc(conversationId)
+                                  .delete()
+                                  .then((_) {
+                                // Also delete any messages in the conversation subcollection
+                                FirebaseFirestore.instance
+                                    .collection('conversations')
+                                    .doc(conversationId)
+                                    .collection('messages')
+                                    .get()
+                                    .then((snapshot) {
+                                  for (DocumentSnapshot doc in snapshot.docs) {
+                                    doc.reference.delete();
+                                  }
+                                });
 
-                              // Navigate to chat screen
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ChatScreen(
-                                    userId: widget.userId,
-                                    chatTitle: conversationId,
-                                    chatType: type,
-                                    messageTracker: widget.messageTracker,
+                                // Show success message
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Conversation deleted'),
+                                    duration: Duration(seconds: 1),
                                   ),
-                                ),
-                              );
+                                );
+                              }).catchError((error) {
+                                print("Error deleting conversation: $error");
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'Error deleting conversation: $error')),
+                                );
+                              });
                             },
+                            child: MessageListTile(
+                              conversation: conversation,
+                              currentUserId: widget.userId,
+                              unreadCount: _unreadCounts[conversationId] ?? 0,
+                              onTap: () {
+                                final data = conversation.data()
+                                    as Map<String, dynamic>?;
+                                final type =
+                                    data?['type'] as String? ?? 'Group';
+
+                                // Mark conversation as read
+                                widget.messageTracker
+                                    .markConversationAsRead(conversationId);
+
+                                // Navigate to chat screen
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ChatScreen(
+                                      userId: widget.userId,
+                                      chatTitle: conversationId,
+                                      chatType: type,
+                                      messageTracker: widget.messageTracker,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           );
                         },
                         childCount: _conversations.length,
@@ -456,15 +499,31 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Widget _buildEmptyState() {
+    String message = '';
+
+    switch (_currentFilter) {
+      case 'Private':
+        message = 'No private chats yet';
+        break;
+      case 'Private Group':
+        message = 'No private group conversations yet';
+        break;
+      case 'Group':
+        message = 'No public group conversations yet';
+        break;
+      default:
+        message = 'No conversations yet';
+    }
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(Icons.message_outlined, size: 64, color: Colors.grey),
           const SizedBox(height: 16),
-          const Text(
-            'No conversations yet',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
+          Text(
+            message,
+            style: const TextStyle(fontSize: 18, color: Colors.grey),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -477,303 +536,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
-// Optimized conversation tile
-  Widget _buildConversationTile(DocumentSnapshot conversation) {
-    final String conversationId = conversation.id;
-    final data = conversation.data() as Map<String, dynamic>?;
-    if (data == null) return const SizedBox();
-
-    // Extract data once
-    final String title = data['title'] ?? 'Unnamed';
-    final String type = data['type'] ?? 'Group';
-    final List<dynamic> participants = data['participants'] ?? [];
-
-    // Calculate color only once
-    final int colorIndex = title.hashCode % AppTheme.squareColors.length;
-    final Color tileColor = AppTheme.squareColors[colorIndex];
-
-    // Get unread count from cached values
-    final int unreadCount = _unreadCounts[conversationId] ?? 0;
-
-    // Extract other participant for private chats
-    String displayName = title;
-    if (type == 'Private' && title.contains(' with ')) {
-      displayName = title.split(' with ').last;
-    }
-
-    // Cache the check for private chat
-    final bool isPrivateChat = type == 'Private';
-
-    return Dismissible(
-      key: Key(conversationId),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20.0),
-        color: Colors.red,
-        child: const Icon(
-          Icons.delete,
-          color: Colors.white,
-        ),
-      ),
-      onDismissed: (direction) {
-        // Delete the conversation from Firestore
-        FirebaseFirestore.instance
-            .collection('conversations')
-            .doc(conversationId)
-            .delete()
-            .then((_) {
-          // Also delete any messages in the conversation subcollection
-          FirebaseFirestore.instance
-              .collection('conversations')
-              .doc(conversationId)
-              .collection('messages')
-              .get()
-              .then((snapshot) {
-            for (DocumentSnapshot doc in snapshot.docs) {
-              doc.reference.delete();
-            }
-          });
-
-          // Show success message
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Conversation deleted'),
-              duration: Duration(seconds: 1),
-            ),
-          );
-        }).catchError((error) {
-          print("Error deleting conversation: $error");
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting conversation: $error')),
-          );
-        });
-      },
-      child: FutureBuilder<String>(
-        // Reuse existing method or create a cached version
-        future: _getLastMessage(conversationId),
-        builder: (context, lastMessageSnapshot) {
-          final String lastMessage = lastMessageSnapshot.data ?? 'Loading...';
-
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-            child: Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color:
-                      unreadCount > 0 ? tileColor : tileColor.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  leading:
-                      _buildLeadingAvatar(displayName, tileColor, unreadCount),
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          isPrivateChat ? displayName : title,
-                          style: TextStyle(
-                            fontWeight: unreadCount > 0
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            fontSize: 16,
-                            color: tileColor.computeLuminance() > 0.5
-                                ? Colors.black
-                                : Colors.white,
-                          ),
-                        ),
-                      ),
-                      if (unreadCount > 0)
-                        _buildUnreadBadge(unreadCount, tileColor),
-                    ],
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        lastMessage,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: unreadCount > 0
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: tileColor.computeLuminance() > 0.5
-                              ? Colors.black.withOpacity(0.7)
-                              : Colors.white.withOpacity(0.9),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          if (type == 'Private Group')
-                            const Text('🔒 ', style: TextStyle(fontSize: 12)),
-                          Text(
-                            isPrivateChat
-                                ? 'Private'
-                                : '${participants.length} members',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: tileColor.computeLuminance() > 0.5
-                                  ? Colors.black.withOpacity(0.6)
-                                  : Colors.white.withOpacity(0.8),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  trailing: FutureBuilder<String>(
-                    future: _getLastMessageTime(conversationId),
-                    builder: (context, timeSnapshot) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: tileColor.computeLuminance() > 0.5
-                              ? Colors.black.withOpacity(0.1)
-                              : Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          timeSnapshot.data ?? '...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: tileColor.computeLuminance() > 0.5
-                                ? Colors.black
-                                : Colors.white,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  onTap: () {
-                    // Mark conversation as read
-                    widget.messageTracker
-                        .markConversationAsRead(conversationId);
-
-                    // Navigate to chat screen
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ChatScreen(
-                          userId: widget.userId,
-                          chatTitle: conversationId,
-                          chatType: type,
-                          messageTracker: widget.messageTracker,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-// Helper methods for UI components
-  Widget _buildLeadingAvatar(
-      String displayName, Color tileColor, int unreadCount) {
-    return Stack(
-      children: [
-        CircleAvatar(
-          backgroundColor: tileColor.computeLuminance() > 0.5
-              ? Colors.black.withOpacity(0.1)
-              : Colors.white.withOpacity(0.8),
-          child: Text(
-            displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-            style: TextStyle(
-              color:
-                  tileColor.computeLuminance() > 0.5 ? Colors.black : tileColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        if (unreadCount > 0)
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1),
-              ),
-              constraints: const BoxConstraints(
-                minWidth: 16,
-                minHeight: 16,
-              ),
-              child: Text(
-                unreadCount > 9 ? '9+' : unreadCount.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildUnreadBadge(int count, Color tileColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.red,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        count > 9 ? '9+' : count.toString(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Future<String> _getLastMessageTime(String conversationId) async {
-    try {
-      final messages = await FirebaseFirestore.instance
-          .collection('conversations')
-          .doc(conversationId)
-          .collection('messages')
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .get();
-
-      if (messages.docs.isNotEmpty) {
-        final timestamp = messages.docs.first['timestamp'] as Timestamp?;
-        if (timestamp != null) {
-          return _formatTimestamp(timestamp.toDate());
-        }
-      }
-    } catch (e) {
-      print("Error getting last message time: $e");
-    }
-
-    return '...';
-  }
-
-// Make sure this helper method handles null correctly
+  // Format timestamp for display
   String _formatTimestamp(DateTime time) {
     final now = DateTime.now();
     final difference = now.difference(time);

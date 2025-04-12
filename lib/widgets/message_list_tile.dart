@@ -63,7 +63,8 @@ class MessageListTile extends StatelessWidget {
                     CircleAvatar(
                       radius: 24,
                       backgroundColor: type == 'Private Group'
-                          ? AppTheme.green.withOpacity(0.2)
+                          ? AppTheme.orange
+                              .withOpacity(0.2) // Changed from AppTheme.green
                           : type == 'Group'
                               ? AppTheme.blue.withOpacity(0.2)
                               : AppTheme.coral.withOpacity(0.2),
@@ -80,10 +81,11 @@ class MessageListTile extends StatelessWidget {
                             )
                           : Icon(
                               type == 'Private Group'
-                                  ? Icons.group
-                                  : Icons.public,
+                                  ? Icons.lock
+                                  : Icons.group,
                               color: type == 'Private Group'
-                                  ? AppTheme.green
+                                  ? AppTheme
+                                      .orange // Changed from AppTheme.green
                                   : AppTheme.blue,
                               size: 24,
                             ),
@@ -118,57 +120,67 @@ class MessageListTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 16),
 
-                // Message content area
+                // Message content area - limiting width to accommodate timestamp
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      // Name and time
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            type == 'Private' ? displayName : title,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: showUnreadIndicator
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                      // Message title and preview
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title with overflow ellipsis
+                            Text(
+                              type == 'Private' ? displayName : title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: showUnreadIndicator
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          Row(
-                            children: [
-                              Text(
-                                timestamp,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
+
+                            // Message preview - limit to one line with ellipsis
+                            const SizedBox(height: 4),
+                            Text(
+                              previewText,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                                fontWeight: showUnreadIndicator
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
-                              const SizedBox(width: 4),
-                              const Icon(
-                                Icons.chevron_right,
-                                size: 16,
-                                color: Colors.grey,
-                              ),
-                            ],
-                          ),
-                        ],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
 
-                      // Message preview
-                      const SizedBox(height: 4),
-                      Text(
-                        previewText,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                          fontWeight: showUnreadIndicator
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                      // Timestamp on the right with fixed width
+                      SizedBox(
+                        width: 70, // Fixed width for timestamp
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              timestamp,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                          ],
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -196,8 +208,14 @@ class MessageListTile extends StatelessWidget {
         final doc = messagesQuery.docs.first;
         final timestamp = doc['timestamp'] as Timestamp?;
 
+        // Get message text without "Group created: " prefix if present
+        String text = doc['text'] ?? 'No message';
+        if (text.startsWith('Group created: ')) {
+          text = text.substring('Group created: '.length);
+        }
+
         return {
-          'text': doc['text'] ?? 'No message',
+          'text': text,
           'senderId': doc['senderId'] ?? '',
           'time': _formatTimestamp(timestamp),
         };

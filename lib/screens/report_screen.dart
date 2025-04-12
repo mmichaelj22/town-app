@@ -70,26 +70,39 @@ class _ReportScreenState extends State<ReportScreen> {
       }
 
       for (String userId in otherParticipants) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .get();
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
 
-        if (userDoc.exists) {
-          final data = userDoc.data() as Map<String, dynamic>?;
-          if (data != null && data.containsKey('name')) {
-            setState(() {
-              _userData[userId] = {
-                'name': data['name'] ?? 'Unknown User',
-                'profileImageUrl': data['profileImageUrl'] ?? '',
-              };
-            });
+          if (userDoc.exists) {
+            final data = userDoc.data();
+
+            // Safely check for required fields
+            if (data != null) {
+              if (mounted) {
+                setState(() {
+                  _userData[userId] = {
+                    'name': data.containsKey('name')
+                        ? data['name'] ?? 'Unknown User'
+                        : 'Unknown User',
+                    'profileImageUrl': data.containsKey('profileImageUrl')
+                        ? data['profileImageUrl'] ?? ''
+                        : '',
+                  };
+                });
+              }
+            }
           }
+        } catch (e) {
+          print('Error processing user $userId: $e');
+          // Continue with other users even if one fails
         }
       }
 
       // If there's only one other participant, select them by default
-      if (_userData.length == 1) {
+      if (_userData.length == 1 && mounted) {
         final userEntry = _userData.entries.first;
         setState(() {
           _selectedUserId = userEntry.key;
@@ -98,9 +111,11 @@ class _ReportScreenState extends State<ReportScreen> {
       }
     } catch (e) {
       print('Error loading user data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading user data: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading user data: $e')),
+        );
+      }
     }
   }
 

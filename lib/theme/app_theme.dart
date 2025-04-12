@@ -1,3 +1,4 @@
+// lib/theme/app_theme.dart
 import 'package:flutter/material.dart';
 
 class AppTheme {
@@ -6,7 +7,8 @@ class AppTheme {
   static const Color blue = Color(0xFF40C4FF);
   static const Color coral = Color(0xFFFF6F61);
   static const Color green = Color(0xFF76FF03);
-  static const Color orange = Color(0xFFFFAB40);
+  static const Color orange =
+      Color(0xFFFFAB40); // Make sure orange is defined here
 
   // List of all available colors for squares
   static const List<Color> squareColors = [
@@ -14,7 +16,7 @@ class AppTheme {
     blue,
     coral,
     green,
-    orange,
+    orange, // Make sure orange is in the squares list
   ];
 
   // White for app bar and navigation

@@ -3,7 +3,6 @@ import 'package:geolocator/geolocator.dart';
 
 class ConversationManager {
   // Configuration parameters
-  // Easy to modify time limits here
   static const int conversationExpiryMinutes =
       15; // Time until conversation disappears if no response
   static const int locationExpiryMinutes =
@@ -152,6 +151,17 @@ class ConversationManager {
         .doc(conversationId)
         .update({
       'participants': FieldValue.arrayUnion([userId]),
+    });
+  }
+
+  // Method to remove user from conversation participants (for leaving a chat)
+  static Future<void> removeParticipant(
+      String conversationId, String userId) async {
+    await FirebaseFirestore.instance
+        .collection('conversations')
+        .doc(conversationId)
+        .update({
+      'participants': FieldValue.arrayRemove([userId]),
     });
   }
 
