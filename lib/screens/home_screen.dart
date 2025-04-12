@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
 import 'conversation_starter.dart';
@@ -24,15 +25,124 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<Color> squareColors = AppTheme.squareColors;
-
+  StreamSubscription? _conversationsSubscription;
+  List<DocumentSnapshot> _visibleConversations = [];
+  bool _isLoading = true;
+  String? _errorMessage;
   // Add caching variables to prevent rebuild loops
   Future<List<DocumentSnapshot>>? _cachedFuture;
   String? _previousKey;
 
   @override
-  Widget build(BuildContext context) {
-    // double screenWidth = MediaQuery.of(context).size.width;
+  void initState() {
+    super.initState();
+    _setupFirestoreListener();
+  }
 
+  void _setupFirestoreListener() {
+    // Cancel any existing subscription
+    _conversationsSubscription?.cancel();
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    // Set up the listener with proper error handling
+    _conversationsSubscription = FirebaseFirestore.instance
+        .collection('conversations')
+        .orderBy('lastActivity', descending: true)
+        .snapshots()
+        .handleError((error) {
+      print("Firestore error: $error");
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Couldn't load conversations: $error";
+      });
+    }).listen((snapshot) {
+      _processConversationsSnapshot(snapshot);
+    });
+  }
+
+  Future<void> _processConversationsSnapshot(QuerySnapshot snapshot) async {
+    if (!mounted) return;
+
+    try {
+      // Get user data for filtering
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+
+      if (!userDoc.exists) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = "User data not found";
+        });
+        return;
+      }
+
+      final userData = userDoc.data() as Map<String, dynamic>;
+      final userLat = userData['latitude'] as double? ?? 0.0;
+      final userLon = userData['longitude'] as double? ?? 0.0;
+
+      // Process conversations in a separate microtask to avoid blocking UI
+      List<DocumentSnapshot> filteredConversations = [];
+
+      // Use a background isolate or microtask for heavy processing
+      await Future.microtask(() async {
+        for (var conversation in snapshot.docs) {
+          try {
+            final isVisible = await ConversationManager.shouldShowOnHomeScreen(
+              userId: widget.userId,
+              conversation: conversation,
+              detectionRadius: widget.detectionRadius,
+              userLat: userLat,
+              userLon: userLon,
+            );
+
+            if (isVisible) {
+              filteredConversations.add(conversation);
+            }
+          } catch (e) {
+            print("Error processing conversation ${conversation.id}: $e");
+          }
+        }
+
+        // Filter blocked users
+        filteredConversations =
+            await BlockingUtils.filterConversationsWithBlockedUsers(
+          currentUserId: widget.userId,
+          conversations: filteredConversations,
+        );
+      });
+
+      if (mounted) {
+        setState(() {
+          _visibleConversations = filteredConversations;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Error processing conversations: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = "Error loading conversations: $e";
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // Clean up subscription to prevent memory leaks
+    _conversationsSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -43,182 +153,43 @@ class _HomeScreenState extends State<HomeScreen> {
           height: 60,
         ),
         centerTitle: true,
-        actions: [],
       ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
         child: Column(
           children: [
-            // Scrollable list of squares
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('conversations')
-                    .orderBy('lastActivity', descending: true)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.chat_bubble_outline,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No conversations nearby',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Start a new conversation to connect with people around you',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[500],
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+            // Error message if needed
+            if (_errorMessage != null)
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 8),
+                color: Colors.red.shade100,
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red),
                       ),
-                    );
-                  }
-
-                  return FutureBuilder<DocumentSnapshot>(
-                    future: FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(widget.userId)
-                        .get(),
-                    builder: (context, userSnapshot) {
-                      if (userSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-                        return const Center(child: Text('User data not found'));
-                      }
-
-                      final userData =
-                          userSnapshot.data!.data() as Map<String, dynamic>;
-                      final userLat = userData['latitude'] as double? ?? 0.0;
-                      final userLon = userData['longitude'] as double? ?? 0.0;
-
-                      // Create a unique key based on inputs
-                      final currentKey =
-                          "${snapshot.data!.docs.length}-${widget.userId}-${widget.detectionRadius}-$userLat-$userLon";
-
-                      // Only create a new Future if our inputs have changed
-                      if (_previousKey != currentKey) {
-                        print(
-                            "Creating new future with key: $currentKey (previous: $_previousKey)");
-                        _previousKey = currentKey;
-                        _cachedFuture = _processConversations(
-                          snapshot.data!.docs,
-                          widget.userId,
-                          widget.detectionRadius,
-                          userLat,
-                          userLon,
-                        );
-                      } else {
-                        print("Reusing cached future with key: $currentKey");
-                      }
-
-                      return FutureBuilder<List<DocumentSnapshot>>(
-                        future: _cachedFuture,
-                        builder: (context, processedSnapshot) {
-                          if (processedSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-
-                          if (!processedSnapshot.hasData ||
-                              processedSnapshot.data!.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.chat_bubble_outline,
-                                    size: 64,
-                                    color: Colors.grey[400],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'No conversations nearby',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Start a new conversation to connect with people around you',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[500],
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
-                          // All conversations together (no splitting by type)
-                          final allConversations = processedSnapshot.data!;
-
-                          return GridView.builder(
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 16.0,
-                              mainAxisSpacing: 0.0,
-                              childAspectRatio:
-                                  1.0, // Make squares equal width and height
-                            ),
-                            itemCount: allConversations.length,
-                            itemBuilder: (context, index) {
-                              final conversation = allConversations[index];
-                              final data =
-                                  conversation.data() as Map<String, dynamic>?;
-                              if (data == null) return SizedBox();
-
-                              final type = data['type'] as String? ?? 'Group';
-
-                              if (type == 'Private') {
-                                return _buildPrivateChatTile(
-                                  context,
-                                  conversation,
-                                  index,
-                                  squareColors,
-                                );
-                              } else {
-                                return _buildGroupChatTile(
-                                  context,
-                                  conversation,
-                                  index,
-                                  squareColors,
-                                );
-                              }
-                            },
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _setupFirestoreListener,
+                      tooltip: 'Try again',
+                    ),
+                  ],
+                ),
               ),
+
+            // Main conversation grid
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _visibleConversations.isEmpty
+                      ? _buildEmptyState()
+                      : _buildConversationsGrid(),
             ),
 
             // Conversation starter component
@@ -234,58 +205,80 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Process conversations based on visibility rules
-  Future<List<DocumentSnapshot>> _processConversations(
-    List<DocumentSnapshot> conversations,
-    String userId,
-    double detectionRadius,
-    double userLat,
-    double userLon,
-  ) async {
-    List<DocumentSnapshot> visibleConversations = [];
-
-    print("Processing ${conversations.length} conversations");
-
-    for (var conversation in conversations) {
-      try {
-        print("Checking visibility for conversation: ${conversation.id}");
-        final isVisible = await ConversationManager.shouldShowOnHomeScreen(
-          userId: userId,
-          conversation: conversation,
-          detectionRadius: detectionRadius,
-          userLat: userLat,
-          userLon: userLon,
-        );
-
-        print("Conversation ${conversation.id} visibility: $isVisible");
-
-        if (isVisible) {
-          visibleConversations.add(conversation);
-        }
-      } catch (e) {
-        print("Error processing conversation ${conversation.id}: $e");
-        // Skip this conversation if there was an error
-      }
-    }
-
-    // Filter out conversations with blocked users
-    visibleConversations =
-        await BlockingUtils.filterConversationsWithBlockedUsers(
-      currentUserId: userId,
-      conversations: visibleConversations,
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No conversations nearby',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Start a new conversation to connect with people around you',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[500],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
+  }
 
-    print(
-        "Found ${visibleConversations.length} visible conversations after filtering blocked users");
-    return visibleConversations;
+  Widget _buildConversationsGrid() {
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16.0,
+        mainAxisSpacing: 0.0,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: _visibleConversations.length,
+      itemBuilder: (context, index) {
+        final conversation = _visibleConversations[index];
+        final data = conversation.data() as Map<String, dynamic>?;
+        if (data == null) return const SizedBox();
+
+        final type = data['type'] as String? ?? 'Group';
+
+        // Memoize color calculation
+        final colorIndex = index % squareColors.length;
+        final color = squareColors[colorIndex];
+
+        if (type == 'Private') {
+          return _buildPrivateChatTile(
+            context,
+            conversation,
+            color,
+          );
+        } else {
+          return _buildGroupChatTile(
+            context,
+            conversation,
+            color,
+          );
+        }
+      },
+    );
   }
 
   // Build a tile for private chat
   Widget _buildPrivateChatTile(
     BuildContext context,
     DocumentSnapshot conversation,
-    int index,
-    List<Color> squareColors,
+    Color color,
   ) {
     final data = conversation.data() as Map<String, dynamic>;
     final String title = data['title'] as String? ?? 'Unnamed';
@@ -311,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // }
 
     // Get color based on index
-    Color color = squareColors[index % squareColors.length];
+    // Color color = squareColors[index % squareColors.length];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
@@ -425,8 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildGroupChatTile(
     BuildContext context,
     DocumentSnapshot conversation,
-    int index,
-    List<Color> squareColors,
+    Color color,
   ) {
     final data = conversation.data() as Map<String, dynamic>;
     final String title = data['title'] as String? ?? 'Unnamed';
@@ -435,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool isPrivateGroup = type == 'Private Group';
 
     // Get color based on index
-    Color color = squareColors[index % squareColors.length];
+    // Color color = squareColors[index % squareColors.length];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
