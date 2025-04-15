@@ -7,6 +7,7 @@ class UserBlockingService {
   // Collection names
   static const String _usersCollection = 'users';
   static const String _blockedUsersCollection = 'blocked_users';
+  static const String _conversationsCollection = 'conversations';
 
   // Block a user
   Future<void> blockUser({
@@ -26,10 +27,43 @@ class UserBlockingService {
         'name': userToBlockName ?? 'Unknown User',
       });
 
+      // Hide private conversations between the two users
+      await _hidePrivateConversations(currentUserId, userToBlockId);
+
       print('User $userToBlockId blocked successfully');
     } catch (e) {
       print('Error blocking user: $e');
       rethrow; // Allow calling code to handle the error
+    }
+  }
+
+  // Hide private conversations between two users
+  Future<void> _hidePrivateConversations(String userId1, String userId2) async {
+    try {
+      // Get all conversations where both users are participants
+      final conversationsQuery = await _firestore
+          .collection(_conversationsCollection)
+          .where('participants', arrayContains: userId1)
+          .get();
+
+      for (var doc in conversationsQuery.docs) {
+        final participants = List<String>.from(doc['participants'] ?? []);
+        final type = doc['type'] as String? ?? '';
+
+        // Check if this is a private chat between the two users
+        if (type == 'Private' && participants.contains(userId2)) {
+          // For private chats, remove both users from participants
+          // This will make the conversation disappear from both users' views
+          await _firestore
+              .collection(_conversationsCollection)
+              .doc(doc.id)
+              .update({
+            'participants': FieldValue.arrayRemove([userId1, userId2]),
+          });
+        }
+      }
+    } catch (e) {
+      print('Error hiding private conversations: $e');
     }
   }
 
@@ -73,6 +107,26 @@ class UserBlockingService {
     }
   }
 
+  // Check if current user is blocked by another user
+  Future<bool> isBlockedByUser({
+    required String currentUserId,
+    required String otherUserId,
+  }) async {
+    try {
+      final docSnapshot = await _firestore
+          .collection(_usersCollection)
+          .doc(otherUserId)
+          .collection(_blockedUsersCollection)
+          .doc(currentUserId)
+          .get();
+
+      return docSnapshot.exists;
+    } catch (e) {
+      print('Error checking if user is blocked by other: $e');
+      return false; // Default to not blocked on error
+    }
+  }
+
   // Get all blocked users
   Stream<QuerySnapshot> getBlockedUsers(String userId) {
     return _firestore
@@ -107,6 +161,25 @@ class UserBlockingService {
       print('Error filtering blocked users: $e');
       return userIds; // Return all users on error (safer than blocking everyone)
     }
+  }
+
+  // Check if users can see each other's locations
+  Future<bool> canViewLocation({
+    required String viewerId,
+    required String targetUserId,
+  }) async {
+    // If either user has blocked the other, they can't view locations
+    bool userIsBlocked = await isUserBlocked(
+      currentUserId: viewerId,
+      otherUserId: targetUserId,
+    );
+
+    bool userIsBlockedBy = await isBlockedByUser(
+      currentUserId: viewerId,
+      otherUserId: targetUserId,
+    );
+
+    return !userIsBlocked && !userIsBlockedBy;
   }
 
   // Report a user (block + send report)

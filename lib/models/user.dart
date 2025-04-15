@@ -1,6 +1,6 @@
-// lib/models/user.dart - Updated with new profile fields
+// Update to the user model to support friend requests
 
-import 'dart:io';
+// lib/models/user.dart - Add friend request fields
 
 class TownUser {
   final String id;
@@ -17,6 +17,10 @@ class TownUser {
   final String statusEmoji;
   final DateTime statusUpdatedAt;
   final List<LocalFavorite> localFavorites;
+  final List<Map<String, dynamic>>
+      friends; // Updated to include more friend info
+  final List<String> pendingFriendRequests; // Friend requests received
+  final List<String> sentFriendRequests; // Friend requests sent
 
   TownUser({
     required this.id,
@@ -33,6 +37,9 @@ class TownUser {
     this.statusEmoji = '',
     DateTime? statusUpdatedAt,
     this.localFavorites = const [],
+    this.friends = const [],
+    this.pendingFriendRequests = const [],
+    this.sentFriendRequests = const [],
   }) : statusUpdatedAt = statusUpdatedAt ?? DateTime.now();
 
   // Convert to Map for Firestore
@@ -52,6 +59,9 @@ class TownUser {
       'statusUpdatedAt': statusUpdatedAt,
       'localFavorites':
           localFavorites.map((favorite) => favorite.toMap()).toList(),
+      'friends': friends,
+      'pendingFriendRequests': pendingFriendRequests,
+      'sentFriendRequests': sentFriendRequests,
     };
   }
 
@@ -62,6 +72,26 @@ class TownUser {
       favorites = List<Map<String, dynamic>>.from(map['localFavorites'])
           .map((favMap) => LocalFavorite.fromMap(favMap))
           .toList();
+    }
+
+    // Handle friends list which can be in different formats
+    List<Map<String, dynamic>> friendsList = [];
+    if (map['friends'] != null) {
+      final rawFriends = map['friends'];
+      if (rawFriends is List) {
+        for (var friend in rawFriends) {
+          if (friend is String) {
+            // Old format - just the name
+            friendsList.add({
+              'id': friend,
+              'name': friend,
+            });
+          } else if (friend is Map) {
+            // New format - includes ID and name
+            friendsList.add(Map<String, dynamic>.from(friend));
+          }
+        }
+      }
     }
 
     return TownUser(
@@ -79,6 +109,10 @@ class TownUser {
       statusUpdatedAt:
           (map['statusUpdatedAt'] as dynamic)?.toDate() ?? DateTime.now(),
       localFavorites: favorites,
+      friends: friendsList,
+      pendingFriendRequests:
+          List<String>.from(map['pendingFriendRequests'] ?? []),
+      sentFriendRequests: List<String>.from(map['sentFriendRequests'] ?? []),
     );
   }
 
@@ -97,6 +131,9 @@ class TownUser {
     String? statusEmoji,
     DateTime? statusUpdatedAt,
     List<LocalFavorite>? localFavorites,
+    List<Map<String, dynamic>>? friends,
+    List<String>? pendingFriendRequests,
+    List<String>? sentFriendRequests,
   }) {
     return TownUser(
       id: this.id,
@@ -113,42 +150,73 @@ class TownUser {
       statusEmoji: statusEmoji ?? this.statusEmoji,
       statusUpdatedAt: statusUpdatedAt ?? this.statusUpdatedAt,
       localFavorites: localFavorites ?? this.localFavorites,
+      friends: friends ?? this.friends,
+      pendingFriendRequests:
+          pendingFriendRequests ?? this.pendingFriendRequests,
+      sentFriendRequests: sentFriendRequests ?? this.sentFriendRequests,
     );
   }
 }
 
-class LocalFavorite {
-  final String name;
-  final String type; // e.g., 'Restaurant', 'Park', 'Coffee Shop'
-  final String description;
-  final double? latitude;
-  final double? longitude;
+// Notification model for friend requests
+class Notification {
+  final String id;
+  final String type; // 'friendRequest', 'friendRequestAccepted', etc.
+  final String senderId;
+  final String senderName;
+  final DateTime timestamp;
+  final bool read;
 
-  LocalFavorite({
-    required this.name,
+  Notification({
+    required this.id,
     required this.type,
-    this.description = '',
-    this.latitude,
-    this.longitude,
+    required this.senderId,
+    required this.senderName,
+    required this.timestamp,
+    this.read = false,
   });
 
   Map<String, dynamic> toMap() {
     return {
-      'name': name,
       'type': type,
-      'description': description,
-      'latitude': latitude,
-      'longitude': longitude,
+      'senderId': senderId,
+      'senderName': senderName,
+      'timestamp': timestamp,
+      'read': read,
     };
   }
 
-  factory LocalFavorite.fromMap(Map<String, dynamic> map) {
-    return LocalFavorite(
-      name: map['name'] ?? '',
-      type: map['type'] ?? '',
-      description: map['description'] ?? '',
-      latitude: map['latitude'],
-      longitude: map['longitude'],
+  factory Notification.fromMap(Map<String, dynamic> map, String id) {
+    return Notification(
+      id: id,
+      type: map['type'] ?? 'unknown',
+      senderId: map['senderId'] ?? '',
+      senderName: map['senderName'] ?? 'Unknown User',
+      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      read: map['read'] ?? false,
     );
   }
 }
+
+// Database structure overview:
+
+// - users/
+//   - {userId}/
+//     - name: String
+//     - latitude: double
+//     - longitude: double
+//     - profileImageUrl: String
+//     - friends: Array<Map> (new format with id and name)
+//     - pendingFriendRequests: Array<String> (userIds who sent requests)
+//     - sentFriendRequests: Array<String> (userIds the user sent requests to)
+//     - blocked_users/
+//       - {blockedUserId}: Map
+//         - blockedAt: Timestamp
+//         - name: String
+//     - notifications/
+//       - {notificationId}: Map
+//         - type: String ('friendRequest', 'friendRequestAccepted', etc.)
+//         - senderId: String
+//         - senderName: String
+//         - timestamp: Timestamp
+//         - read: boolean

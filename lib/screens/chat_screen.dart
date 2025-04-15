@@ -50,9 +50,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _loadParticipants();
-    // Assign a color based on chat title
-    final colorIndex = widget.chatTitle.hashCode % AppTheme.squareColors.length;
-    chatColor = AppTheme.squareColors[colorIndex];
+
+    // Assign a color based on chat type instead of chat title
+    switch (widget.chatType) {
+      case 'Private':
+        chatColor = AppTheme.coral;
+        break;
+      case 'Private Group':
+        chatColor = AppTheme.orange;
+        break;
+      default: // Public Group
+        chatColor = AppTheme.blue;
+    }
 
     // Mark conversation as read when entering
     if (widget.messageTracker != null) {
@@ -61,7 +70,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Add this listener for emoji picker
     _messageFocusNode.addListener(() {
-      if (_messageFocusNode.hasFocus) {
+      if (_messageFocusNode.hasFocus && mounted) {
         setState(() {
           _showEmojiPicker = false;
         });
