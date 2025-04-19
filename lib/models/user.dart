@@ -1,6 +1,43 @@
-// Update to the user model to support friend requests
+// lib/models/user.dart
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// lib/models/user.dart - Add friend request fields
+// Define the LocalFavorite class first since it's used in TownUser
+class LocalFavorite {
+  final String name;
+  final String type;
+  final String description;
+  final double? latitude;
+  final double? longitude;
+
+  LocalFavorite({
+    required this.name,
+    required this.type,
+    this.description = '',
+    this.latitude,
+    this.longitude,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'type': type,
+      'description': description,
+      'latitude': latitude,
+      'longitude': longitude,
+    };
+  }
+
+  factory LocalFavorite.fromMap(Map<String, dynamic> map) {
+    return LocalFavorite(
+      name: map['name'] ?? '',
+      type: map['type'] ?? '',
+      description: map['description'] ?? '',
+      latitude: map['latitude'],
+      longitude: map['longitude'],
+    );
+  }
+}
 
 class TownUser {
   final String id;
@@ -107,7 +144,7 @@ class TownUser {
       statusMessage: map['statusMessage'] ?? '',
       statusEmoji: map['statusEmoji'] ?? '',
       statusUpdatedAt:
-          (map['statusUpdatedAt'] as dynamic)?.toDate() ?? DateTime.now(),
+          (map['statusUpdatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       localFavorites: favorites,
       friends: friendsList,
       pendingFriendRequests:

@@ -8,6 +8,8 @@ import 'screens/register_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/intro_animation.dart';
+import 'screens/profile_viewer_screen.dart';
+import 'screens/report_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme/app_theme.dart';
 
@@ -73,8 +75,54 @@ class TownApp extends StatelessWidget {
         '/signin': (context) => SignInScreen(cameras: cameras),
         '/register': (context) => RegisterScreen(cameras: cameras),
         '/main': (context) => MainScreen(),
+        // Add new routes here
+        '/report': (context) {
+          // Get arguments passed to this route
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>?;
+          if (args == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Error')),
+              body: const Center(child: Text('Missing required parameters')),
+            );
+          }
+
+          // The route uses the original parameter names from the ReportScreen class
+          return ReportScreen(
+            currentUserId: args['currentUserId'] as String,
+            conversationId: args['conversationId'] as String? ?? '',
+            participants: args['participants'] as List<String>? ?? [],
+          );
+        },
+        '/profile': (context) {
+          // Get arguments passed to this route
+          final args = ModalRoute.of(context)!.settings.arguments
+              as Map<String, dynamic>?;
+          if (args == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Error')),
+              body: const Center(child: Text('Missing required parameters')),
+            );
+          }
+
+          return ProfileViewerScreen(
+            currentUserId: args['currentUserId'] as String,
+            userId: args['userId'] as String,
+            userName: args['userName'] as String,
+          );
+        },
       },
       debugShowCheckedModeBanner: false,
+      // You can also add onGenerateRoute for dynamic route handling
+      onGenerateRoute: (settings) {
+        // Handle any routes that aren't explicitly defined
+        return MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(title: const Text('Error')),
+            body: Center(child: Text('Route ${settings.name} not found')),
+          ),
+        );
+      },
     );
   }
 }
