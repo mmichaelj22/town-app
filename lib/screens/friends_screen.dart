@@ -186,6 +186,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
             final data = doc.data() as Map<String, dynamic>?;
             if (data == null) continue;
 
+            // Skip users who have undetectable mode enabled
+            // *** This is the key change to respect undetectable mode ***
+            if (data.containsKey('undetectable') &&
+                data['undetectable'] == true) {
+              continue; // Skip this user - they are in undetectable mode
+            }
+
             // Safely check all required fields
             if (!data.containsKey('latitude') ||
                 !data.containsKey('longitude') ||
@@ -960,7 +967,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           .doc(widget.userId)
           .get();
 
-      final userData = userDoc.data() as Map<String, dynamic>?;
+      final userData = userDoc.data();
       if (userData == null) return;
 
       final String receiverName =

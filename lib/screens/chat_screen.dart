@@ -1,3 +1,5 @@
+// Updated chat_screen.dart with fixes for the emoji_picker_flutter package
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
@@ -1318,29 +1320,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       _onEmojiSelected(emoji.emoji);
                     },
                     config: Config(
-                      columns: 7,
-                      emojiSizeMax: 32.0,
-                      verticalSpacing: 0,
-                      horizontalSpacing: 0,
-                      initCategory: Category.SMILEYS,
-                      bgColor: const Color(0xFFF2F2F2),
-                      indicatorColor: chatColor,
-                      iconColor: Colors.grey,
-                      iconColorSelected: chatColor,
-                      // Remove or comment out this line:
-                      // progressIndicatorColor: chatColor,
-                      backspaceColor: chatColor,
-                      skinToneDialogBgColor: Colors.white,
-                      skinToneIndicatorColor: Colors.grey,
-                      enableSkinTones: true,
-                      //showRecentsTab: true,
-                      //recentsLimit: 28,
-                      noRecents: const Text('No Recents',
-                          style:
-                              TextStyle(fontSize: 20, color: Colors.black26)),
-                      tabIndicatorAnimDuration: kTabScrollDuration,
-                      categoryIcons: const CategoryIcons(),
-                      buttonMode: ButtonMode.MATERIAL,
+                      height: 250,
+                      // Configuration for emoji view (grid of emojis)
+                      emojiViewConfig: EmojiViewConfig(
+                        // Maximum size of emoji
+                        emojiSizeMax: 32.0,
+                      ),
+                      // Configuration for the order of components
+                      viewOrderConfig: const ViewOrderConfig(
+                        top: EmojiPickerItem.categoryBar,
+                        middle: EmojiPickerItem.emojiView,
+                        bottom: EmojiPickerItem.searchBar,
+                      ),
+                      // Configuration for skin tone selection
+                      skinToneConfig: const SkinToneConfig(
+                        dialogBackgroundColor: Colors.white,
+                        indicatorColor: Colors.grey,
+                      ),
+                      // Configuration for category view (tabs)
+                      categoryViewConfig: CategoryViewConfig(
+                        iconColor: Colors.grey,
+                        iconColorSelected: chatColor,
+                        indicatorColor: chatColor,
+                      ),
+                      // Configuration for the bottom action bar
+                      bottomActionBarConfig: BottomActionBarConfig(
+                        backgroundColor: Colors.transparent,
+                        buttonColor: chatColor,
+                      ),
+                      // Configuration for the search view
+                      searchViewConfig: const SearchViewConfig(
+                        buttonIconColor: Colors.black,
+                        backgroundColor: Colors.white,
+                      ),
+                      // Check platform compatibility (improves emoji display)
+                      checkPlatformCompatibility: true,
                     ),
                   ),
                 ),
