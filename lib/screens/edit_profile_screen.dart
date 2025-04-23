@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/user.dart';
 import '../theme/app_theme.dart';
+import 'profile_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final TownUser user;
@@ -24,31 +25,67 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController _genderController;
+  late TextEditingController _relationshipStatusController; // New controller
+  late TextEditingController _currentCityController; // New controller
   late TextEditingController _hometownController;
   late TextEditingController _bioController;
-
+  final List<String> _relationshipOptions = [
+    'Single',
+    'In a relationship',
+    'Don\'t show'
+  ];
   File? _imageFile;
   bool _isUploading = false;
   String? _profileImageUrl;
+  DateTime? _selectedBirthDate;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
-    _genderController = TextEditingController(text: widget.user.gender);
+    _selectedBirthDate = widget.user.birthDate;
+    _relationshipStatusController =
+        TextEditingController(text: widget.user.relationshipStatus); // New
+    _currentCityController =
+        TextEditingController(text: widget.user.currentCity); // New
     _hometownController = TextEditingController(text: widget.user.hometown);
     _bioController = TextEditingController(text: widget.user.bio);
-    _profileImageUrl = widget.user.profileImageUrl;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _genderController.dispose();
+    _relationshipStatusController.dispose(); // New
+    _currentCityController.dispose(); // New
     _hometownController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  Future<void> _selectBirthDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedBirthDate ?? DateTime(2000, 1, 1),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.coral,
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != _selectedBirthDate) {
+      setState(() {
+        _selectedBirthDate = picked;
+      });
+    }
   }
 
   Future<void> _pickImage() async {
@@ -96,7 +133,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         // Update user profile in Firestore
         Map<String, dynamic> updateData = {
           'name': _nameController.text.trim(),
-          'gender': _genderController.text.trim(),
+          'birthDate': _selectedBirthDate,
+          'relationshipStatus': _relationshipStatusController.text.trim(),
+          'currentCity': _currentCityController.text.trim(),
           'hometown': _hometownController.text.trim(),
           'bio': _bioController.text.trim(),
         };
@@ -131,6 +170,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Calculate age from selected birth date for display
+    String ageText = 'Not specified';
+    if (_selectedBirthDate != null) {
+      final today = DateTime.now();
+      int age = today.year - _selectedBirthDate!.year;
+      if (today.month < _selectedBirthDate!.month ||
+          (today.month == _selectedBirthDate!.month &&
+              today.day < _selectedBirthDate!.day)) {
+        age--;
+      }
+      ageText = '$age years old';
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Profile'),
@@ -253,24 +305,76 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Gender
-                    TextFormField(
-                      controller: _genderController,
-                      decoration: const InputDecoration(
-                        labelText: 'Gender',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.people),
+                    // Age field (new)
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () => _selectBirthDate(context),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Birthday',
+                          hintText: 'Select your birthday',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.cake),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _selectedBirthDate == null
+                                  ? 'No date selected'
+                                  : '${_selectedBirthDate!.month}/${_selectedBirthDate!.day}/${_selectedBirthDate!.year} ($ageText)',
+                            ),
+                            const Icon(Icons.calendar_today),
+                          ],
+                        ),
                       ),
                     ),
+
+                    // Relationship Status (new)
                     const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _relationshipStatusController.text.isEmpty ||
+                              !_relationshipOptions
+                                  .contains(_relationshipStatusController.text)
+                          ? 'Don\'t show'
+                          : _relationshipStatusController.text,
+                      decoration: const InputDecoration(
+                        labelText: 'Relationship Status',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.favorite),
+                      ),
+                      items: _relationshipOptions.map((status) {
+                        return DropdownMenuItem<String>(
+                          value: status,
+                          child: Text(status),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          _relationshipStatusController.text = value;
+                        }
+                      },
+                    ),
+
+                    // Current City (new)
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _currentCityController,
+                      decoration: const InputDecoration(
+                        labelText: 'Current City',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_city),
+                      ),
+                    ),
 
                     // Hometown
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _hometownController,
                       decoration: const InputDecoration(
                         labelText: 'Hometown',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.location_city),
+                        prefixIcon: Icon(Icons.home),
                       ),
                     ),
                     const SizedBox(height: 16),

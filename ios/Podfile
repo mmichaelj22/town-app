@@ -1,10 +1,8 @@
-platform :ios, '15.0'
+# Uncomment this line to define a global platform for your project
+# platform :ios, '12.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-
-# Explicitly specify workspace
-workspace 'Runner.xcworkspace'
 
 project 'Runner', {
   'Debug' => :debug,
@@ -17,6 +15,7 @@ def flutter_root
   unless File.exist?(generated_xcode_build_settings_path)
     raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
   end
+
   File.foreach(generated_xcode_build_settings_path) do |line|
     matches = line.match(/FLUTTER_ROOT\=(.*)/)
     return matches[1].strip if matches
@@ -30,46 +29,15 @@ flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks!
-  use_modular_headers!
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
 end
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    
-    target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-    end
-  end
-  
-  # Fix BoringSSL-GRPC compiler flags in a separate step
-  boring_ssl_target = installer.pods_project.targets.find { |t| t.name == 'BoringSSL-GRPC' }
-  if boring_ssl_target
-    boring_ssl_target.build_configurations.each do |config|
-      # Remove -G flags from compilation settings
-      ['OTHER_CFLAGS', 'OTHER_CXXFLAGS', 'OTHER_LDFLAGS'].each do |setting|
-        if config.build_settings[setting].is_a?(String)
-          config.build_settings[setting] = config.build_settings[setting].gsub(/-G\S*/, '')
-        elsif config.build_settings[setting].is_a?(Array)
-          config.build_settings[setting] = config.build_settings[setting].map do |flag|
-            if flag.is_a?(String)
-              flag.gsub(/-G\S*/, '') 
-            else
-              flag
-            end
-          end
-        end
-      end
-    end
-    
-    # Fix source files compiler flags
-    boring_ssl_target.source_build_phase.files.each do |file|
-      if file.file_ref.path.end_with?('.c') || file.file_ref.path.end_with?('.cc')
-        if file.settings && file.settings['COMPILER_FLAGS']
-          file.settings['COMPILER_FLAGS'] = file.settings['COMPILER_FLAGS'].gsub(/-G\S*/, '')
-        end
-      end
-    end
   end
 end

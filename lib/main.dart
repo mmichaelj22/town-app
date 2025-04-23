@@ -12,6 +12,9 @@ import 'screens/profile_viewer_screen.dart';
 import 'screens/report_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'theme/app_theme.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 const bool kResetIntroOnRestart = false; // Set to false for production
 
@@ -32,6 +35,11 @@ Future<bool> requestCameraPermission() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Google Maps Flutter
+  // if (defaultTargetPlatform == TargetPlatform.iOS) {
+  //   await GoogleMapsPlatform.instance.ensureInitialized();
+  // }
 
   // Request camera permission and initialize cameras
   bool hasPermission = await requestCameraPermission();

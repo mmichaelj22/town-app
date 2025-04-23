@@ -4,37 +4,45 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Define the LocalFavorite class first since it's used in TownUser
 class LocalFavorite {
+  final String id; // Add a unique identifier
   final String name;
-  final String type;
-  final String description;
-  final double? latitude;
-  final double? longitude;
+  final String placeId; // Google Maps Place ID for the location
+  final String recommendation; // User's recommendation about the place
+  final double latitude;
+  final double longitude;
+  final String formattedAddress; // Complete address from Google
 
   LocalFavorite({
+    this.id = '',
     required this.name,
-    required this.type,
-    this.description = '',
-    this.latitude,
-    this.longitude,
+    required this.placeId,
+    this.recommendation = '',
+    required this.latitude,
+    required this.longitude,
+    required this.formattedAddress,
   });
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'name': name,
-      'type': type,
-      'description': description,
+      'placeId': placeId,
+      'recommendation': recommendation,
       'latitude': latitude,
       'longitude': longitude,
+      'formattedAddress': formattedAddress,
     };
   }
 
   factory LocalFavorite.fromMap(Map<String, dynamic> map) {
     return LocalFavorite(
+      id: map['id'] ?? '',
       name: map['name'] ?? '',
-      type: map['type'] ?? '',
-      description: map['description'] ?? '',
-      latitude: map['latitude'],
-      longitude: map['longitude'],
+      placeId: map['placeId'] ?? '',
+      recommendation: map['recommendation'] ?? '',
+      latitude: map['latitude'] ?? 0.0,
+      longitude: map['longitude'] ?? 0.0,
+      formattedAddress: map['formattedAddress'] ?? '',
     );
   }
 }
@@ -46,8 +54,10 @@ class TownUser {
   final double longitude;
   final File? profilePicture;
   final String? profileImageUrl;
-  final String gender;
+  final DateTime? birthDate;
   final String hometown;
+  final String currentCity;
+  final String relationshipStatus;
   final String bio;
   final List<String> interests;
   final String statusMessage;
@@ -66,8 +76,10 @@ class TownUser {
     required this.longitude,
     this.profilePicture,
     this.profileImageUrl,
-    this.gender = 'Not specified',
+    this.birthDate,
+    this.relationshipStatus = 'Not specified',
     this.hometown = 'Not specified',
+    this.currentCity = 'Not specified',
     this.bio = 'No bio yet.',
     this.interests = const [],
     this.statusMessage = '',
@@ -79,6 +91,22 @@ class TownUser {
     this.sentFriendRequests = const [],
   }) : statusUpdatedAt = statusUpdatedAt ?? DateTime.now();
 
+  // Calculate age based on birthDate
+  int get age {
+    if (birthDate == null) return 0;
+
+    final today = DateTime.now();
+    int age = today.year - birthDate!.year;
+
+    // Account for birthday not yet happened this year
+    if (today.month < birthDate!.month ||
+        (today.month == birthDate!.month && today.day < birthDate!.day)) {
+      age--;
+    }
+
+    return age;
+  }
+
   // Convert to Map for Firestore
   Map<String, dynamic> toMap() {
     return {
@@ -87,7 +115,9 @@ class TownUser {
       'latitude': latitude,
       'longitude': longitude,
       'profileImageUrl': profileImageUrl ?? '',
-      'gender': gender,
+      'birthDate': birthDate,
+      'relationshipStatus': relationshipStatus,
+      'currentCity': currentCity,
       'hometown': hometown,
       'bio': bio,
       'interests': interests,
@@ -137,8 +167,13 @@ class TownUser {
       latitude: map['latitude'] ?? 0.0,
       longitude: map['longitude'] ?? 0.0,
       profileImageUrl: map['profileImageUrl'],
-      gender: map['gender'] ?? 'Not specified',
+      birthDate: map['birthDate'] != null
+          ? (map['birthDate'] as Timestamp).toDate()
+          : null,
+      relationshipStatus:
+          map['relationshipStatus'] ?? 'Not specified', // New field
       hometown: map['hometown'] ?? 'Not specified',
+      currentCity: map['currentCity'] ?? 'Not specified', // New field
       bio: map['bio'] ?? 'No bio yet.',
       interests: List<String>.from(map['interests'] ?? []),
       statusMessage: map['statusMessage'] ?? '',
@@ -160,8 +195,10 @@ class TownUser {
     double? longitude,
     File? profilePicture,
     String? profileImageUrl,
-    String? gender,
+    DateTime? birthDate,
+    String? relationshipStatus, // New field
     String? hometown,
+    String? currentCity, // New field
     String? bio,
     List<String>? interests,
     String? statusMessage,
@@ -179,8 +216,11 @@ class TownUser {
       longitude: longitude ?? this.longitude,
       profilePicture: profilePicture ?? this.profilePicture,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
-      gender: gender ?? this.gender,
+      birthDate: birthDate ?? this.birthDate,
+      relationshipStatus:
+          relationshipStatus ?? this.relationshipStatus, // New field
       hometown: hometown ?? this.hometown,
+      currentCity: currentCity ?? this.currentCity, // New field
       bio: bio ?? this.bio,
       interests: interests ?? this.interests,
       statusMessage: statusMessage ?? this.statusMessage,

@@ -9,6 +9,8 @@ import 'status_editor_screen.dart';
 import 'interests_editor_screen.dart';
 import 'local_favorites_screen.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'place_picker_screen.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -492,6 +494,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header
             Row(
               children: [
                 Container(
@@ -531,7 +534,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
+
             const Divider(),
+
             if (userData!.localFavorites.isEmpty)
               const Center(
                 child: Padding(
@@ -547,36 +552,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
               )
             else
               Column(
-                children: userData!.localFavorites.map((favorite) {
-                  final IconData iconData =
-                      _getIconForFavoriteType(favorite.type);
-
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0), // Reduced padding
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero, // Remove default padding
-                      leading: CircleAvatar(
-                        backgroundColor: AppTheme.blue.withOpacity(0.2),
-                        child: Icon(iconData, color: AppTheme.blue),
-                      ),
-                      title: Text(
-                        favorite.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        favorite.description.isEmpty
-                            ? favorite.type
-                            : '${favorite.type} • ${favorite.description}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Map with all favorites
+                  SizedBox(
+                    height: 180,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: _buildFavoritesMap(userData!.localFavorites),
                     ),
-                  );
-                }).toList(),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // List of favorites with recommendations
+                  ...userData!.localFavorites
+                      .map((favorite) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  favorite.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                if (favorite.recommendation.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      '"${favorite.recommendation}"',
+                                      style: TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                        color: Colors.grey[700],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: 4),
+                                const Divider(height: 8),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                ],
               ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFavoritesMap(List<LocalFavorite> favorites) {
+    if (favorites.isEmpty) return Container();
+
+    // Create a list of markers from favorites
+    final Set<Marker> markers = favorites.map((favorite) {
+      return Marker(
+        markerId: MarkerId(favorite.id),
+        position: LatLng(favorite.latitude, favorite.longitude),
+        infoWindow: InfoWindow(title: favorite.name),
+      );
+    }).toSet();
+
+    // Calculate bounds to fit all markers
+    double? minLat, maxLat, minLng, maxLng;
+    for (final favorite in favorites) {
+      if (minLat == null || favorite.latitude < minLat)
+        minLat = favorite.latitude;
+      if (maxLat == null || favorite.latitude > maxLat)
+        maxLat = favorite.latitude;
+      if (minLng == null || favorite.longitude < minLng)
+        minLng = favorite.longitude;
+      if (maxLng == null || favorite.longitude > maxLng)
+        maxLng = favorite.longitude;
+    }
+
+    // Add padding to bounds
+    minLat = minLat! - 0.01;
+    maxLat = maxLat! + 0.01;
+    minLng = minLng! - 0.01;
+    maxLng = maxLng! + 0.01;
+
+    // Center position
+    final centerLat = (minLat + maxLat) / 2;
+    final centerLng = (minLng + maxLng) / 2;
+
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(
+        target: LatLng(centerLat, centerLng),
+        zoom: 12,
+      ),
+      markers: markers,
+      myLocationEnabled: false,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+      onMapCreated: (controller) {
+        // Fit bounds when map is created
+        controller.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            LatLngBounds(
+              southwest: LatLng(minLat!, minLng!),
+              northeast: LatLng(maxLat!, maxLng!),
+            ),
+            50, // padding
+          ),
+        );
+      },
     );
   }
 
@@ -618,8 +702,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const Divider(),
-            _buildInfoItem(Icons.person, 'Gender', userData!.gender),
-            _buildInfoItem(Icons.location_city, 'Hometown', userData!.hometown),
+            userData!.birthDate != null
+                ? _buildInfoItem(Icons.cake, 'Age', '${userData!.age} years')
+                : _buildInfoItem(Icons.cake, 'Age', 'Not specified'),
+            _buildInfoItem(Icons.favorite, 'Relationship Status',
+                userData!.relationshipStatus),
+            _buildInfoItem(
+                Icons.location_city, 'Current City', userData!.currentCity),
+            _buildInfoItem(Icons.home, 'Hometown', userData!.hometown),
           ],
         ),
       ),
