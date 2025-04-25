@@ -8,25 +8,13 @@ import GoogleMaps
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Read and obfuscate API key
-    if let apiKey = self.obfuscatedGoogleMapsAPIKey() {
+    // TESTING: Use only Config.xcconfig method
+    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GoogleMapsAPIKey") as? String {
+      // If this works, Config.xcconfig is working
       GMSServices.provideAPIKey(apiKey)
     }
     
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-  }
-  
-  // Simple obfuscation function - not highly secure but an additional layer
-  private func obfuscatedGoogleMapsAPIKey() -> String? {
-    guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "GoogleMapsAPIKey") as? String else {
-      return nil
-    }
-    
-    // Add some basic obfuscation here if needed
-    // This example just does a simple transformation that can be undone
-    // For better security, consider more sophisticated methods
-    
-    return apiKey
   }
 }

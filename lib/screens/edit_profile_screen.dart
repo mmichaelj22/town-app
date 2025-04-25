@@ -8,7 +8,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/user.dart';
 import '../theme/app_theme.dart';
-import 'profile_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final TownUser user;

@@ -7,6 +7,7 @@ import '../models/user.dart';
 import '../theme/app_theme.dart';
 import 'place_picker_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 class LocalFavoritesScreen extends StatefulWidget {
   final String userId;
@@ -28,35 +29,36 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
   final int _maxFavorites = 5;
 
   // Controllers for the add/edit favorite form
-  final _formKey = GlobalKey<FormState>();
+  // final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  String _selectedType = 'Restaurant';
-  bool _useCurrentLocation = true;
-  double? _latitude;
-  double? _longitude;
-  bool _isAddingFavorite = false;
-  int? _editingIndex;
+  // String _selectedType = 'Restaurant';
+  // bool _useCurrentLocation = true;
+  // double? _latitude;
+  // double? _longitude;
+  // bool _isAddingFavorite = false;
+  // int? _editingIndex;
 
   // Available place types
-  final List<String> _placeTypes = [
-    'Restaurant',
-    'Coffee Shop',
-    'Bar',
-    'Park',
-    'Museum',
-    'Shopping',
-    'Gym',
-    'Library',
-    'Theater',
-    'Beach',
-    'Other',
-  ];
+  // final List<String> _placeTypes = [
+  //   'Restaurant',
+  //   'Coffee Shop',
+  //   'Bar',
+  //   'Park',
+  //   'Museum',
+  //   'Shopping',
+  //   'Gym',
+  //   'Library',
+  //   'Theater',
+  //   'Beach',
+  //   'Other',
+  // ];
 
   @override
   void initState() {
     super.initState();
     _favorites = List.from(widget.favorites);
+    _requestLocationPermission(); // Add this line
   }
 
   @override
@@ -64,6 +66,14 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    try {
+      await Geolocator.requestPermission();
+    } catch (e) {
+      print("Error requesting location permission: $e");
+    }
   }
 
   Future<void> _saveFavorites() async {
@@ -182,7 +192,11 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
                           padding: const EdgeInsets.all(16),
                           children: [
                             // Map with pins for all favorites
-                            if (_favorites.isNotEmpty) _buildFavoritesMap(),
+                            if (_favorites.isNotEmpty)
+                              Container(
+                                height: 200, // Fixed height!
+                                child: _buildFavoritesMap(_favorites),
+                              ),
 
                             // List of favorites below the map
                             ..._favorites.asMap().entries.map((entry) {
@@ -311,65 +325,104 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
     );
   }
 
-  Widget _buildFavoritesMap() {
+// This should be implemented in profile_screen.dart and local_favorites_screen.dart
+
+  Widget _buildFavoritesMap(List<LocalFavorite> favorites) {
+    if (favorites.isEmpty) return Container();
+
     // Create a list of markers from favorites
-    final Set<Marker> markers = _favorites.map((favorite) {
-      return Marker(
-        markerId: MarkerId(favorite.id),
-        position: LatLng(favorite.latitude, favorite.longitude),
-        infoWindow: InfoWindow(title: favorite.name),
-      );
-    }).toSet();
+    final Set<Marker> markers = {};
 
     // Calculate bounds to fit all markers
     double? minLat, maxLat, minLng, maxLng;
-    for (final favorite in _favorites) {
-      if (minLat == null || favorite.latitude < minLat)
+
+    // Debug the markers creation
+    print("Creating map with ${favorites.length} favorites");
+
+    // Process all favorites to create markers and calculate bounds
+    for (final favorite in favorites) {
+      print(
+          "Adding marker: ${favorite.name} at (${favorite.latitude}, ${favorite.longitude})");
+
+      // Create a marker for this favorite
+      markers.add(Marker(
+        markerId: MarkerId(favorite.id),
+        position: LatLng(favorite.latitude, favorite.longitude),
+        infoWindow: InfoWindow(title: favorite.name),
+      ));
+
+      // Update the bounds
+      if (minLat == null || favorite.latitude < minLat) {
         minLat = favorite.latitude;
-      if (maxLat == null || favorite.latitude > maxLat)
+      }
+      if (maxLat == null || favorite.latitude > maxLat) {
         maxLat = favorite.latitude;
-      if (minLng == null || favorite.longitude < minLng)
+      }
+      if (minLng == null || favorite.longitude < minLng) {
         minLng = favorite.longitude;
-      if (maxLng == null || favorite.longitude > maxLng)
+      }
+      if (maxLng == null || favorite.longitude > maxLng) {
         maxLng = favorite.longitude;
+      }
+    }
+
+    // Use default coordinates if no favorites or invalid coordinates
+    if (markers.isEmpty ||
+        minLat == null ||
+        maxLat == null ||
+        minLng == null ||
+        maxLng == null) {
+      print("No valid markers found, using default location");
+      // Default to San Francisco coordinates
+      final defaultPosition = LatLng(37.7749, -122.4194);
+      markers.add(Marker(
+        markerId: const MarkerId('default'),
+        position: defaultPosition,
+        infoWindow: const InfoWindow(title: "Default Location"),
+      ));
+
+      return GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: defaultPosition,
+          zoom: 12,
+        ),
+        markers: markers,
+        myLocationEnabled: false,
+        zoomControlsEnabled: true,
+        mapToolbarEnabled: false,
+      );
     }
 
     // Add padding to bounds
-    minLat = minLat! - 0.01;
-    maxLat = maxLat! + 0.01;
-    minLng = minLng! - 0.01;
-    maxLng = maxLng! + 0.01;
+    minLat = minLat - 0.01;
+    maxLat = maxLat + 0.01;
+    minLng = minLng - 0.01;
+    maxLng = maxLng + 0.01;
 
     // Center position
     final centerLat = (minLat + maxLat) / 2;
     final centerLng = (minLng + maxLng) / 2;
 
-    return Container(
-      height: 200,
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    // Print the final map parameters
+    print("Map will be centered at ($centerLat, $centerLng)");
+    print("Map has ${markers.length} markers");
+
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(
+        target: LatLng(centerLat, centerLng),
+        zoom: 12,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: GoogleMap(
-          initialCameraPosition: CameraPosition(
-            target: LatLng(centerLat, centerLng),
-            zoom: 12,
-          ),
-          markers: markers,
-          myLocationEnabled: false,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          onMapCreated: (controller) {
-            // Fit bounds when map is created
+      markers: markers,
+      myLocationEnabled: false,
+      zoomControlsEnabled: true,
+      mapToolbarEnabled: false,
+      onMapCreated: (GoogleMapController controller) {
+        // Store the controller if needed
+        print("Map created successfully");
+
+        // Wait a moment for the map to initialize before animating camera
+        Future.delayed(const Duration(milliseconds: 500), () {
+          try {
             controller.animateCamera(
               CameraUpdate.newLatLngBounds(
                 LatLngBounds(
@@ -379,9 +432,12 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
                 50, // padding
               ),
             );
-          },
-        ),
-      ),
+            print("Camera animated to show all markers");
+          } catch (e) {
+            print("Error animating camera: $e");
+          }
+        });
+      },
     );
   }
 

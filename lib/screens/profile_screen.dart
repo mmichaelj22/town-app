@@ -11,6 +11,7 @@ import 'local_favorites_screen.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'place_picker_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,11 +24,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final String userId = FirebaseAuth.instance.currentUser?.uid ?? '';
   TownUser? userData;
   bool isLoading = true;
+  final ValueNotifier<bool> _isMapReady = ValueNotifier<bool>(false);
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
+    _requestLocationPermission(); // Add this line
+  }
+
+  // Add this new method
+  Future<void> _requestLocationPermission() async {
+    try {
+      await Geolocator.requestPermission();
+    } catch (e) {
+      print("Error requesting location permission: $e");
+    }
   }
 
   Future<void> _loadUserProfile() async {
@@ -47,6 +59,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           userData = TownUser.fromMap(data, userId);
         });
+
+        // Add this line to debug local favorites
+        _debugLocalFavorites();
       }
     } catch (e) {
       print("Error loading profile: $e");
@@ -62,6 +77,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // If userData is loaded but has no favorites, add test data
+    if (!isLoading && userData != null) {
+      _addTestFavoritesIfNeeded();
+    }
+
     return Scaffold(
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -555,11 +575,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Map with all favorites
-                  SizedBox(
-                    height: 180,
+                  Container(
+                    height: 300, // Ensure sufficient height
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[300]!),
+                      color: Colors.grey[
+                          100], // Background color in case map doesn't load
+                    ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: _buildFavoritesMap(userData!.localFavorites),
+                      child: Stack(
+                        children: [
+                          // The map
+                          _buildFavoritesMap(userData!.localFavorites),
+
+                          // Optional loading indicator overlay that disappears when map is ready
+                          ValueListenableBuilder<bool>(
+                            valueListenable:
+                                _isMapReady, // Create this as a ValueNotifier<bool> in your state class
+                            builder: (context, isReady, child) {
+                              return isReady
+                                  ? const SizedBox.shrink()
+                                  : Container(
+                                      color: Colors.white.withOpacity(0.7),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -605,40 +653,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+// This should be implemented in profile_screen.dart and local_favorites_screen.dart
+
   Widget _buildFavoritesMap(List<LocalFavorite> favorites) {
+    print("====== MAP DEBUG ======");
+    print("Building map with ${favorites.length} favorites");
+    for (var fav in favorites) {
+      print("Favorite: ${fav.name} at (${fav.latitude}, ${fav.longitude})");
+    }
+
     if (favorites.isEmpty) return Container();
 
     // Create a list of markers from favorites
-    final Set<Marker> markers = favorites.map((favorite) {
-      return Marker(
-        markerId: MarkerId(favorite.id),
-        position: LatLng(favorite.latitude, favorite.longitude),
-        infoWindow: InfoWindow(title: favorite.name),
-      );
-    }).toSet();
+    final Set<Marker> markers = {};
 
     // Calculate bounds to fit all markers
     double? minLat, maxLat, minLng, maxLng;
+
+    // Debug the markers creation
+    print("Creating map with ${favorites.length} favorites");
+
+    // Process all favorites to create markers and calculate bounds
     for (final favorite in favorites) {
-      if (minLat == null || favorite.latitude < minLat)
+      print(
+          "Adding marker: ${favorite.name} at (${favorite.latitude}, ${favorite.longitude})");
+
+      // Create a marker for this favorite
+      markers.add(Marker(
+        markerId: MarkerId(favorite.id),
+        position: LatLng(favorite.latitude, favorite.longitude),
+        infoWindow: InfoWindow(title: favorite.name),
+      ));
+
+      // Update the bounds
+      if (minLat == null || favorite.latitude < minLat) {
         minLat = favorite.latitude;
-      if (maxLat == null || favorite.latitude > maxLat)
+      }
+      if (maxLat == null || favorite.latitude > maxLat) {
         maxLat = favorite.latitude;
-      if (minLng == null || favorite.longitude < minLng)
+      }
+      if (minLng == null || favorite.longitude < minLng) {
         minLng = favorite.longitude;
-      if (maxLng == null || favorite.longitude > maxLng)
+      }
+      if (maxLng == null || favorite.longitude > maxLng) {
         maxLng = favorite.longitude;
+      }
+    }
+
+    // Use default coordinates if no favorites or invalid coordinates
+    if (markers.isEmpty ||
+        minLat == null ||
+        maxLat == null ||
+        minLng == null ||
+        maxLng == null) {
+      print("No valid markers found, using default location");
+      // Default to San Francisco coordinates
+      final defaultPosition = LatLng(37.7749, -122.4194);
+      markers.add(Marker(
+        markerId: const MarkerId('default'),
+        position: defaultPosition,
+        infoWindow: const InfoWindow(title: "Default Location"),
+      ));
+
+      return GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: defaultPosition,
+          zoom: 12,
+        ),
+        markers: markers,
+        myLocationEnabled: false,
+        zoomControlsEnabled: true,
+        mapToolbarEnabled: false,
+      );
     }
 
     // Add padding to bounds
-    minLat = minLat! - 0.01;
-    maxLat = maxLat! + 0.01;
-    minLng = minLng! - 0.01;
-    maxLng = maxLng! + 0.01;
+    minLat = minLat - 0.01;
+    maxLat = maxLat + 0.01;
+    minLng = minLng - 0.01;
+    maxLng = maxLng + 0.01;
 
     // Center position
     final centerLat = (minLat + maxLat) / 2;
     final centerLng = (minLng + maxLng) / 2;
+
+    // Print the final map parameters
+    print("Map will be centered at ($centerLat, $centerLng)");
+    print("Map has ${markers.length} markers");
 
     return GoogleMap(
       initialCameraPosition: CameraPosition(
@@ -647,21 +748,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       markers: markers,
       myLocationEnabled: false,
-      zoomControlsEnabled: false,
+      zoomControlsEnabled: true,
       mapToolbarEnabled: false,
-      onMapCreated: (controller) {
-        // Fit bounds when map is created
-        controller.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(minLat!, minLng!),
-              northeast: LatLng(maxLat!, maxLng!),
-            ),
-            50, // padding
-          ),
-        );
+      onMapCreated: (GoogleMapController controller) {
+        print("Map created successfully");
+        _isMapReady.value = true;
+
+        // Wait a moment for the map to initialize before animating camera
+        Future.delayed(const Duration(milliseconds: 500), () {
+          try {
+            controller.animateCamera(
+              CameraUpdate.newLatLngBounds(
+                LatLngBounds(
+                  southwest: LatLng(minLat!, minLng!),
+                  northeast: LatLng(maxLat!, maxLng!),
+                ),
+                50, // padding
+              ),
+            );
+            print("Camera animated to show all markers");
+          } catch (e) {
+            print("Error animating camera: $e");
+          }
+        });
       },
     );
+  }
+
+  void _debugLocalFavorites() {
+    if (userData == null) {
+      print("DEBUG: userData is null!");
+      return;
+    }
+
+    print("DEBUG: Local favorites count: ${userData!.localFavorites.length}");
+
+    if (userData!.localFavorites.isEmpty) {
+      print("DEBUG: No local favorites found!");
+      return;
+    }
+
+    for (var i = 0; i < userData!.localFavorites.length; i++) {
+      final fav = userData!.localFavorites[i];
+      print("DEBUG: Favorite #$i");
+      print("  Name: ${fav.name}");
+      print("  Coordinates: (${fav.latitude}, ${fav.longitude})");
+      print("  PlaceId: ${fav.placeId}");
+      print("  Address: ${fav.formattedAddress}");
+    }
   }
 
 // Helper method to get appropriate icon based on favorite type
@@ -754,4 +888,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  // In your profile_screen.dart, add this method to insert test data if no favorites exist
+
+  void _addTestFavoritesIfNeeded() {
+    if (userData != null && userData!.localFavorites.isEmpty) {
+      print("No favorites found, adding test data for map display");
+
+      // Create some test locations (New York landmarks)
+      final testFavorites = [
+        LocalFavorite(
+          id: 'test1',
+          name: 'Central Park',
+          placeId: 'ChIJ4zGFAZpYwokRGUGph3Mf37k',
+          latitude: 40.7812,
+          longitude: -73.9665,
+          formattedAddress: 'Central Park, New York, NY',
+          recommendation: 'Great for walking and relaxing',
+        ),
+        LocalFavorite(
+          id: 'test2',
+          name: 'Empire State Building',
+          placeId: 'ChIJaXQRs6lZwokRY6EFpJnhNNE',
+          latitude: 40.7484,
+          longitude: -73.9857,
+          formattedAddress: '20 W 34th St, New York, NY 10001',
+          recommendation: 'Amazing views from the top!',
+        ),
+        LocalFavorite(
+          id: 'test3',
+          name: 'Times Square',
+          placeId: 'ChIJmQJIxlVYwokRLgeuocVOGVU',
+          latitude: 40.7580,
+          longitude: -73.9855,
+          formattedAddress: 'Times Square, New York, NY 10036',
+          recommendation: 'Vibrant at night with all the lights',
+        ),
+      ];
+
+      // This is only for testing the map display - NOT saving to database
+      setState(() {
+        // Create a copy of userData with test favorites
+        userData = userData!.copyWith(
+          localFavorites: testFavorites,
+        );
+      });
+    }
+  }
+
+// Call this method in build() or after loading user data:
+// _addTestFavoritesIfNeeded();
 }
