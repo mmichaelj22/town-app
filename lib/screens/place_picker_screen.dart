@@ -3,7 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/user.dart';
 import '../theme/app_theme.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
 
 class PlacePickerScreen extends StatefulWidget {
   final LocalFavorite? initialFavorite;
@@ -21,12 +21,13 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
   final _recommendationController = TextEditingController();
   final _searchController = TextEditingController();
 
-  // Default to a location (San Francisco)
-  LatLng _selectedLocation = const LatLng(37.7749, -122.4194);
+  // Default to a location (New York City)
+  LatLng _selectedLocation = const LatLng(40.7128, -74.0060);
 
   bool _isLoading = false;
   String _placeId = '';
   final uuid = Uuid();
+  GoogleMapController? _mapController;
 
   @override
   void initState() {
@@ -63,45 +64,102 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
     });
 
     try {
-      // Try to geocode the search term
-      List<Location> locations = await locationFromAddress(query);
+      // Try multiple geocoding providers by using different geocoding formats
+      List<geocoding.Location> locations = [];
+
+      try {
+        // Try standard format first
+        locations = await geocoding.locationFromAddress(query);
+        print("Successfully found location for: $query");
+      } catch (e) {
+        // The geocoding package throws exceptions when no results are found
+        print("First geocoding attempt failed: $e");
+
+        if (e.toString().contains("Could not find any result") ||
+            e.toString().contains("network error")) {
+          try {
+            // Try adding more context if it failed (e.g., add "New York" if not present)
+            if (!query.toLowerCase().contains("new york")) {
+              print("Trying with New York context...");
+              locations =
+                  await geocoding.locationFromAddress("$query, New York");
+              print("Successfully found location with New York context");
+            }
+          } catch (e2) {
+            print("Second geocoding attempt failed: $e2");
+
+            // Try with just the main part of the query (remove any street numbers, etc.)
+            try {
+              // Remove numbers and specific details to get more general results
+              final simplifiedQuery =
+                  query.replaceAll(RegExp(r'\d+'), '').trim();
+              if (simplifiedQuery != query) {
+                print("Trying with simplified query: $simplifiedQuery");
+                locations =
+                    await geocoding.locationFromAddress(simplifiedQuery);
+                print("Successfully found location with simplified query");
+              }
+            } catch (e3) {
+              print("Third geocoding attempt failed: $e3");
+            }
+          }
+        }
+      }
 
       if (locations.isNotEmpty) {
         final location = locations.first;
 
         // Get the address details from the coordinates
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-            location.latitude, location.longitude);
-
-        if (placemarks.isNotEmpty) {
-          final placemark = placemarks.first;
-          final formattedAddress = _formatAddress(placemark);
-
-          setState(() {
-            _nameController.text = query; // Use the search query as the name
-            _addressController.text = formattedAddress;
-            _selectedLocation = LatLng(location.latitude, location.longitude);
-            _placeId = 'geocoded_${uuid.v4()}';
-          });
-
-          // Update map camera
-          _mapController?.animateCamera(
-            CameraUpdate.newLatLngZoom(
-              _selectedLocation,
-              15,
-            ),
-          );
+        List<geocoding.Placemark> placemarks = [];
+        try {
+          placemarks = await geocoding.placemarkFromCoordinates(
+              location.latitude, location.longitude);
+        } catch (e) {
+          print("Error getting placemark from coordinates: $e");
         }
+
+        setState(() {
+          // If query is something recognizable like a landmark, use that as the name
+          _nameController.text = query;
+
+          // If we have a placemark, use its formatted address
+          if (placemarks.isNotEmpty) {
+            final placemark = placemarks.first;
+            _addressController.text = _formatAddress(placemark);
+          } else {
+            // Otherwise just use the original query
+            _addressController.text = query;
+          }
+
+          _selectedLocation = LatLng(location.latitude, location.longitude);
+          _placeId = 'geocoded_${uuid.v4()}';
+        });
+
+        // Update map camera
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            _selectedLocation,
+            15,
+          ),
+        );
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Found location: ${_nameController.text}')),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Location not found. Try a more specific search.')),
+              content: Text(
+                  'Location not found. Try a more specific search or include city name.')),
         );
       }
     } catch (e) {
       print("Error searching location: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error searching location: $e')),
+        const SnackBar(
+            content: Text(
+                'Error searching location. Try a different format or more specific address.')),
       );
     } finally {
       setState(() {
@@ -111,7 +169,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
   }
 
   // Format address from placemark
-  String _formatAddress(Placemark placemark) {
+  String _formatAddress(geocoding.Placemark placemark) {
     List<String> addressParts = [];
 
     if (placemark.street != null && placemark.street!.isNotEmpty)
@@ -136,17 +194,35 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
   // When marker is moved, update the address
   Future<void> _updateAddressFromLocation() async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-          _selectedLocation.latitude, _selectedLocation.longitude);
+      // Use geocoding to get address from coordinates
+      List<geocoding.Placemark> placemarks = [];
+      try {
+        placemarks = await geocoding.placemarkFromCoordinates(
+            _selectedLocation.latitude, _selectedLocation.longitude);
+      } catch (e) {
+        print("Error getting address from location: $e");
+      }
 
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
         setState(() {
           _addressController.text = _formatAddress(placemark);
+
+          // If the name is empty, try to set it from the placemark
+          if (_nameController.text.isEmpty) {
+            if (placemark.name != null &&
+                placemark.name!.isNotEmpty &&
+                placemark.name != "null") {
+              _nameController.text = placemark.name!;
+            } else if (placemark.thoroughfare != null &&
+                placemark.thoroughfare!.isNotEmpty) {
+              _nameController.text = placemark.thoroughfare!;
+            }
+          }
         });
       }
     } catch (e) {
-      print("Error getting address from location: $e");
+      print("Error updating address from location: $e");
     }
   }
 
@@ -169,8 +245,6 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
         "Saving favorite: ${favorite.name} at (${favorite.latitude}, ${favorite.longitude})");
     Navigator.pop(context, favorite);
   }
-
-  GoogleMapController? _mapController;
 
   @override
   Widget build(BuildContext context) {
