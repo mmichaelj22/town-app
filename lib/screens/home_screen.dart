@@ -300,15 +300,6 @@ class _HomeScreenState extends State<HomeScreen> {
       displayName = title.split(" with ").last;
     }
 
-    // Extract topic from title if available
-    // String topic = title;
-    // if (title.contains(" with ")) {
-    //   topic = title.split(" with ").first;
-    // }
-
-    // Get color based on index
-    // Color color = squareColors[index % squareColors.length];
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: GestureDetector(

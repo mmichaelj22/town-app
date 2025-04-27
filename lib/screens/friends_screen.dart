@@ -4,7 +4,6 @@ import 'package:geolocator/geolocator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/custom_header.dart';
 import '../widgets/profile_action_menu.dart';
-import 'chat_screen.dart';
 import '../utils/user_blocking_service.dart';
 
 class FriendsScreen extends StatefulWidget {
@@ -214,8 +213,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             }
 
             // Check if this is a friend
-            bool isFriend = _friends.any((friend) =>
-                friend is Map<String, dynamic> && friend['id'] == userId);
+            bool isFriend = _friends.any((friend) => friend['id'] == userId);
 
             // Check pending friend requests
             bool hasPendingRequest = _pendingFriendRequests.contains(userId);
