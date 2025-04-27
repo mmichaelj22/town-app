@@ -503,7 +503,7 @@
 					"@executable_path/Frameworks",
 				);
 				MAPS_API_KEY = "$(MAPS_API_KEY)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.town;
+				PRODUCT_BUNDLE_IDENTIFIER = com.michael.town;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -689,7 +689,7 @@
 					"@executable_path/Frameworks",
 				);
 				MAPS_API_KEY = "$(MAPS_API_KEY)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.town;
+				PRODUCT_BUNDLE_IDENTIFIER = com.michael.town;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -713,7 +713,7 @@
 					"@executable_path/Frameworks",
 				);
 				MAPS_API_KEY = "$(MAPS_API_KEY)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.town;
+				PRODUCT_BUNDLE_IDENTIFIER = com.michael.town;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

@@ -33,6 +33,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _requestLocationPermission(); // Add this line
   }
 
+  @override
+  void dispose() {
+    // Clean up any controllers or resources here
+    super.dispose();
+  }
+
   // Add this new method
   Future<void> _requestLocationPermission() async {
     try {
@@ -718,20 +724,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return GoogleMap(
         initialCameraPosition: CameraPosition(
           target: defaultPosition,
-          zoom: 12,
+          zoom: 14,
         ),
         markers: markers,
         myLocationEnabled: false,
         zoomControlsEnabled: true,
-        mapToolbarEnabled: false,
+        mapToolbarEnabled: true,
+        mapType: MapType.normal,
+        onMapCreated: (GoogleMapController controller) {
+          // Store the controller if needed
+          print("Map created successfully");
+          _isMapReady.value = true;
+        },
       );
     }
 
     // Add padding to bounds
-    minLat = minLat - 0.01;
-    maxLat = maxLat + 0.01;
-    minLng = minLng - 0.01;
-    maxLng = maxLng + 0.01;
+    minLat = minLat - 0.02; // Increased padding
+    maxLat = maxLat + 0.02;
+    minLng = minLng - 0.02;
+    maxLng = maxLng + 0.02;
 
     // Center position
     final centerLat = (minLat + maxLat) / 2;
@@ -744,18 +756,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return GoogleMap(
       initialCameraPosition: CameraPosition(
         target: LatLng(centerLat, centerLng),
-        zoom: 12,
+        zoom: 13, // Increased zoom level
       ),
       markers: markers,
       myLocationEnabled: false,
       zoomControlsEnabled: true,
-      mapToolbarEnabled: false,
+      mapToolbarEnabled: true,
+      mapType: MapType.normal,
       onMapCreated: (GoogleMapController controller) {
         print("Map created successfully");
         _isMapReady.value = true;
 
         // Wait a moment for the map to initialize before animating camera
-        Future.delayed(const Duration(milliseconds: 500), () {
+        Future.delayed(const Duration(milliseconds: 1000), () {
           try {
             controller.animateCamera(
               CameraUpdate.newLatLngBounds(
@@ -763,7 +776,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   southwest: LatLng(minLat!, minLng!),
                   northeast: LatLng(maxLat!, maxLng!),
                 ),
-                50, // padding
+                100, // Increased padding
               ),
             );
             print("Camera animated to show all markers");

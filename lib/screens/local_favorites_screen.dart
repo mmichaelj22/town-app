@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import 'place_picker_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:uuid/uuid.dart';
 
 class LocalFavoritesScreen extends StatefulWidget {
   final String userId;
@@ -32,6 +33,7 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
   // final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final ValueNotifier<bool> _isMapReady = ValueNotifier(false);
   // String _selectedType = 'Restaurant';
   // bool _useCurrentLocation = true;
   // double? _latitude;
@@ -65,6 +67,7 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _isMapReady.dispose();
     super.dispose();
   }
 
@@ -328,6 +331,12 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
 // This should be implemented in profile_screen.dart and local_favorites_screen.dart
 
   Widget _buildFavoritesMap(List<LocalFavorite> favorites) {
+    print("====== MAP DEBUG ======");
+    print("Building map with ${favorites.length} favorites");
+    for (var fav in favorites) {
+      print("Favorite: ${fav.name} at (${fav.latitude}, ${fav.longitude})");
+    }
+
     if (favorites.isEmpty) return Container();
 
     // Create a list of markers from favorites
@@ -384,20 +393,26 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
       return GoogleMap(
         initialCameraPosition: CameraPosition(
           target: defaultPosition,
-          zoom: 12,
+          zoom: 14,
         ),
         markers: markers,
         myLocationEnabled: false,
         zoomControlsEnabled: true,
-        mapToolbarEnabled: false,
+        mapToolbarEnabled: true,
+        mapType: MapType.normal,
+        onMapCreated: (GoogleMapController controller) {
+          // Store the controller if needed
+          print("Map created successfully");
+          _isMapReady.value = true;
+        },
       );
     }
 
     // Add padding to bounds
-    minLat = minLat - 0.01;
-    maxLat = maxLat + 0.01;
-    minLng = minLng - 0.01;
-    maxLng = maxLng + 0.01;
+    minLat = minLat - 0.02; // Increased padding
+    maxLat = maxLat + 0.02;
+    minLng = minLng - 0.02;
+    maxLng = maxLng + 0.02;
 
     // Center position
     final centerLat = (minLat + maxLat) / 2;
@@ -410,18 +425,19 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
     return GoogleMap(
       initialCameraPosition: CameraPosition(
         target: LatLng(centerLat, centerLng),
-        zoom: 12,
+        zoom: 13, // Increased zoom level
       ),
       markers: markers,
       myLocationEnabled: false,
       zoomControlsEnabled: true,
-      mapToolbarEnabled: false,
+      mapToolbarEnabled: true,
+      mapType: MapType.normal,
       onMapCreated: (GoogleMapController controller) {
-        // Store the controller if needed
         print("Map created successfully");
+        _isMapReady.value = true;
 
         // Wait a moment for the map to initialize before animating camera
-        Future.delayed(const Duration(milliseconds: 500), () {
+        Future.delayed(const Duration(milliseconds: 1000), () {
           try {
             controller.animateCamera(
               CameraUpdate.newLatLngBounds(
@@ -429,7 +445,7 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
                   southwest: LatLng(minLat!, minLng!),
                   northeast: LatLng(maxLat!, maxLng!),
                 ),
-                50, // padding
+                100, // Increased padding
               ),
             );
             print("Camera animated to show all markers");
