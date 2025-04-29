@@ -6,6 +6,8 @@ import '../theme/app_theme.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:google_maps_webservice/places.dart';
 import '../utils/api_config.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class PlacePickerScreen extends StatefulWidget {
   final LocalFavorite? initialFavorite;
@@ -377,82 +379,83 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
   }
 
   void _selectSuggestion(Prediction prediction) {
-    print("Selected prediction: ${prediction.description}");
-
-    // Extract business name from structured formatting
-    String placeName = "";
-    if (prediction.structuredFormatting != null &&
-        prediction.structuredFormatting!.mainText != null) {
-      placeName = prediction.structuredFormatting!.mainText!;
-    } else if (prediction.description != null &&
-        prediction.description!.contains(',')) {
-      placeName = prediction.description!.split(',').first.trim();
-    } else if (prediction.description != null) {
-      placeName = prediction.description!;
-    } else {
-      placeName = "Unnamed Place";
-    }
-
-    // Update UI with what we have initially
+    // Store the place ID and update UI
+    _placeId = prediction.placeId ?? 'place_${uuid.v4()}';
     setState(() {
       _showSuggestions = false;
-      _nameController.text = placeName;
-      if (prediction.description != null) {
-        _searchController.text = prediction.description!;
-      }
-
-      // For address, we'll use the full geocoding later, but set a placeholder
-      if (prediction.structuredFormatting?.secondaryText != null) {
-        _addressController.text =
-            prediction.structuredFormatting!.secondaryText!;
-      } else if (prediction.description != null &&
-          prediction.description!.contains(',')) {
-        // Get everything after the first comma
-        _addressController.text = prediction.description!
-            .substring(prediction.description!.indexOf(',') + 1)
-            .trim();
-      }
-
-      // Generate a placeholder ID if needed
-      _placeId = prediction.placeId ?? 'place_${uuid.v4()}';
+      _searchController.text = prediction.description ?? "";
     });
 
     // Hide keyboard
     FocusScope.of(context).unfocus();
 
-    // Get the full address with geocoding
-    if (prediction.description != null) {
+    // Fetch detailed place information
+    if (prediction.placeId != null && _placesApiInitialized) {
+      _getDetailedPlaceInfo(prediction.placeId!);
+    } else {
       _searchLocation();
     }
   }
 
-// Simplified place details function that just gets location
-  Future<void> _getPlaceDetailsMinimal(String placeId) async {
+  Future<void> _getDetailedPlaceInfo(String placeId) async {
+    print("======= FETCHING PLACE DETAILS =======");
+    print("Place ID: $placeId");
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Request only the geometry field to minimize data
-      final details =
-          await _placesApi.getDetailsByPlaceId(placeId, fields: ['geometry']);
+      // Get API key
+      String apiKey = await ApiConfig.getGoogleApiKey();
 
-      if (details.status == "OK" &&
-          details.result?.geometry?.location != null) {
-        final location = details.result!.geometry!.location!;
+      // Make direct HTTP request to Places API
+      final url = 'https://maps.googleapis.com/maps/api/place/details/json'
+          '?place_id=$placeId'
+          '&fields=name,formatted_address,geometry,address_component'
+          '&key=$apiKey';
 
-        setState(() {
-          _selectedLocation = LatLng(location.lat, location.lng);
-        });
+      final response = await http.get(Uri.parse(url));
 
-        _updateMap();
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        print("Response JSON status: ${data['status']}");
+
+        if (data['status'] == 'OK' && data['result'] != null) {
+          final result = data['result'];
+
+          // Extract and update location
+          if (result['geometry'] != null &&
+              result['geometry']['location'] != null) {
+            final location = result['geometry']['location'];
+            setState(() {
+              _selectedLocation = LatLng(location['lat'], location['lng']);
+            });
+          }
+
+          // Extract and set name and address
+          setState(() {
+            _nameController.text = result['name'] ?? '';
+            _addressController.text = result['formatted_address'] ?? '';
+          });
+
+          // Update map
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(_selectedLocation, 15),
+          );
+
+          print("Place data successfully processed");
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Found location: ${_nameController.text}')),
+          );
+        } else {
+          _searchLocation();
+        }
       } else {
-        print("Minimal place details failed: ${details.errorMessage}");
-        // Fall back to search which was working
         _searchLocation();
       }
     } catch (e) {
-      print("Error getting minimal place details: $e");
       _searchLocation();
     } finally {
       setState(() {
@@ -606,60 +609,83 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
                           ],
                         ),
                         child: ListView.separated(
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: true,
-                          physics: _addressSuggestions.length > 5
-                              ? const ClampingScrollPhysics()
-                              : const NeverScrollableScrollPhysics(),
-                          itemCount: _addressSuggestions.length > 5
-                              ? 5
-                              : _addressSuggestions.length,
-                          separatorBuilder: (context, index) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final prediction = _addressSuggestions[index];
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            physics: _addressSuggestions.length > 5
+                                ? const ClampingScrollPhysics()
+                                : const NeverScrollableScrollPhysics(),
+                            itemCount: _addressSuggestions.length > 5
+                                ? 5
+                                : _addressSuggestions.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final prediction = _addressSuggestions[index];
 
-                            // Show proper restaurant icon for establishments
-                            IconData icon = Icons.place;
-                            if (prediction.types != null) {
-                              if (prediction.types!.contains('restaurant') ||
-                                  prediction.types!.contains('food')) {
-                                icon = Icons.restaurant;
-                              } else if (prediction.types!.contains('bar')) {
-                                icon = Icons.local_bar;
+                              // Show proper restaurant icon for establishments
+                              IconData icon = Icons.place;
+                              if (prediction.types != null) {
+                                if (prediction.types!.contains('restaurant') ||
+                                    prediction.types!.contains('food')) {
+                                  icon = Icons.restaurant;
+                                } else if (prediction.types!.contains('bar')) {
+                                  icon = Icons.local_bar;
+                                } else if (prediction.types!
+                                        .contains('school') ||
+                                    prediction.types!.contains('university')) {
+                                  icon = Icons.school;
+                                }
                               }
-                            }
 
-                            // Display full address in the dropdown
-                            return ListTile(
-                              dense: true,
-                              leading: Icon(icon, color: Colors.grey),
-                              title: Text(
-                                  prediction.structuredFormatting?.mainText ??
-                                      prediction.description
-                                          ?.split(',')
-                                          .first ??
-                                      "Unknown Place",
+                              // Get full name/title for the place
+                              String mainText = "";
+                              if (prediction.structuredFormatting?.mainText !=
+                                  null) {
+                                mainText =
+                                    prediction.structuredFormatting!.mainText!;
+                              } else if (prediction.description != null) {
+                                // If no structured formatting, use the first part of the description
+                                mainText = prediction.description!
+                                    .split(',')
+                                    .first
+                                    .trim();
+                              } else {
+                                mainText = "Unknown Place";
+                              }
+
+                              // Get full address including street number
+                              String subText = "";
+                              if (prediction
+                                      .structuredFormatting?.secondaryText !=
+                                  null) {
+                                subText = prediction
+                                    .structuredFormatting!.secondaryText!;
+                              } else if (prediction.description != null &&
+                                  prediction.description!.contains(',')) {
+                                // Get everything after the first comma for the address
+                                subText = prediction.description!
+                                    .substring(
+                                        prediction.description!.indexOf(',') +
+                                            1)
+                                    .trim();
+                              }
+
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(icon, color: Colors.grey),
+                                title: Text(
+                                  mainText,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                              subtitle: Text(
-                                prediction
-                                        .structuredFormatting?.secondaryText ??
-                                    (prediction.description?.contains(',') ==
-                                            true
-                                        ? prediction.description!
-                                            .substring(prediction.description!
-                                                    .indexOf(',') +
-                                                1)
-                                            .trim()
-                                        : ""),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              onTap: () => _selectSuggestion(prediction),
-                            );
-                          },
-                        ),
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(
+                                  subText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onTap: () => _selectSuggestion(prediction),
+                              );
+                            }),
                       ),
 
                     const SizedBox(height: 16),
@@ -773,65 +799,65 @@ class _PlacePickerScreenState extends State<PlacePickerScreen> {
     );
   }
 
-// Update the dropdown item display in place_picker_screen.dart
-// This will help show a formatted version of the prediction
+  Future<void> _getCompleteAddressDetails(String placeId) async {
+    setState(() {
+      _isLoading = true;
+    });
 
-  Widget _buildPredictionItem(Prediction prediction) {
-    // Try to extract a cleaner display name
-    String displayName = prediction.description ?? 'Unknown location';
-    String? subtitle;
+    try {
+      // Request the full place details with all address components
+      final details = await _placesApi.getDetailsByPlaceId(placeId, fields: [
+        'name',
+        'formatted_address',
+        'geometry',
+        'address_component'
+      ]);
 
-    // If the description has commas, try to separate main part from details
-    if (displayName.contains(',')) {
-      final parts = displayName.split(',');
-      if (parts.length > 1) {
-        displayName = parts[0].trim();
-        // Join the rest as a subtitle
-        subtitle = parts.sublist(1).join(',').trim();
+      if (details.status == "OK") {
+        // Extract location coordinates
+        if (details.result?.geometry?.location != null) {
+          final location = details.result!.geometry!.location!;
+          setState(() {
+            _selectedLocation = LatLng(location.lat, location.lng);
+          });
+        }
+
+        // Set the place name - handle null safely
+        setState(() {
+          _nameController.text = details.result?.name ?? "";
+        });
+
+        // Set the complete formatted address with street number - handle null safely
+        setState(() {
+          _addressController.text = details.result?.formattedAddress ?? "";
+        });
+
+        // Update map camera only if we have valid coordinates
+        if (_selectedLocation != null && _mapController != null) {
+          _mapController!.animateCamera(
+            CameraUpdate.newLatLngZoom(
+              _selectedLocation,
+              15,
+            ),
+          );
+        }
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Found location: ${_nameController.text}')),
+        );
+      } else {
+        print(
+            "Place details request failed: ${details.errorMessage ?? "Unknown error"}");
+        _searchLocation(); // Fall back to geocoding
       }
+    } catch (e) {
+      print("Error getting place details: $e");
+      _searchLocation(); // Fall back to geocoding
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
-
-    // Determine icon based on place type
-    IconData icon = Icons.place;
-    if (prediction.types != null && prediction.types!.isNotEmpty) {
-      if (prediction.types!.contains('restaurant') ||
-          prediction.types!.contains('food')) {
-        icon = Icons.restaurant;
-      } else if (prediction.types!.contains('cafe')) {
-        icon = Icons.local_cafe;
-      } else if (prediction.types!.contains('bar')) {
-        icon = Icons.local_bar;
-      } else if (prediction.types!.contains('park')) {
-        icon = Icons.park;
-      } else if (prediction.types!.contains('store') ||
-          prediction.types!.contains('shopping_mall')) {
-        icon = Icons.shopping_bag;
-      } else if (prediction.types!.contains('lodging')) {
-        icon = Icons.hotel;
-      }
-    }
-
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, color: Colors.grey),
-      title: Text(
-        displayName,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-            )
-          : null,
-      onTap: () => _selectSuggestion(prediction),
-    );
   }
 }

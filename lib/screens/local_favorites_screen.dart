@@ -175,7 +175,6 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
                                 height: 200, // Fixed height!
                                 child: _buildFavoritesMap(_favorites),
                               ),
-
                             // List of favorites below the map
                             ..._favorites.asMap().entries.map((entry) {
                               final index = entry.key;
