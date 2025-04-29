@@ -25,10 +25,11 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _undetectableMode = false;
-
+  bool _isProfilePublic = true; // Default to public
   @override
   void initState() {
     super.initState();
+    _loadProfileVisibility();
     _loadUndetectableMode();
   }
 
@@ -70,6 +71,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Revert UI if update fails
       setState(() {
         _undetectableMode = !value;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating settings: $e')),
+      );
+    }
+  }
+
+  Future<void> _loadProfileVisibility() async {
+    try {
+      // Get from Firestore to ensure it's in sync with the server
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+
+      if (userDoc.exists) {
+        final data = userDoc.data() as Map<String, dynamic>?;
+        if (data != null) {
+          setState(() {
+            _isProfilePublic = data['profilePublic'] ?? true;
+          });
+          return;
+        }
+      }
+
+      // Fallback to local storage if Firestore fails
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _isProfilePublic = prefs.getBool('profilePublic') ?? true;
+      });
+    } catch (e) {
+      print("Error loading profile visibility: $e");
+      // Fallback to default
+      setState(() {
+        _isProfilePublic = true;
+      });
+    }
+  }
+
+// Add this method to toggle the profile visibility
+  Future<void> _toggleProfileVisibility(bool value) async {
+    setState(() {
+      _isProfilePublic = value;
+    });
+
+    try {
+      // Update Firestore user document
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .update({
+        'profilePublic': value,
+      });
+
+      // Also update local storage for redundancy
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('profilePublic', value);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value
+              ? 'Your profile is now public'
+              : 'Your profile is now private'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error updating profile visibility: $e');
+      // Revert UI if update fails
+      setState(() {
+        _isProfilePublic = !value;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error updating settings: $e')),
@@ -323,24 +395,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Blocked Users item
-                          _buildSettingsItem(
-                            context: context,
-                            icon: Icons.block,
-                            iconColor: Colors.red,
-                            title: 'Blocked Users',
-                            subtitle: 'Manage your blocked users list',
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      BlockedUsersScreen(userId: widget.userId),
-                                ),
-                              );
-                            },
-                          ),
-
                           // Undetectable Mode item with switch
                           _buildSettingsItem(
                             context: context,
@@ -359,6 +413,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               onChanged: _toggleUndetectableMode,
                               activeColor: Colors.purple,
                             ),
+                          ),
+                          // Profile Visibility item with switch
+                          _buildSettingsItem(
+                            context: context,
+                            icon: Icons.visibility,
+                            iconColor: Colors.indigo,
+                            title: 'Profile Visibility',
+                            subtitle: _isProfilePublic
+                                ? 'Public - Anyone nearby can view your profile'
+                                : 'Private - Only friends can view your profile',
+                            onTap: () {
+                              _toggleProfileVisibility(!_isProfilePublic);
+                            },
+                            trailing: Switch(
+                              value: _isProfilePublic,
+                              onChanged: _toggleProfileVisibility,
+                              activeColor: Colors.indigo,
+                            ),
+                          ),
+                          // Blocked Users item
+                          _buildSettingsItem(
+                            context: context,
+                            icon: Icons.block,
+                            iconColor: Colors.red,
+                            title: 'Blocked Users',
+                            subtitle: 'Manage your blocked users list',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      BlockedUsersScreen(userId: widget.userId),
+                                ),
+                              );
+                            },
                           ),
 
                           // Report Problem item

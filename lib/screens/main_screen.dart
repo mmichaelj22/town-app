@@ -189,8 +189,9 @@ class _MainScreenState extends State<MainScreen> {
       body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: AppTheme.navBarColor,
-        selectedItemColor: AppTheme.navBarItemColor,
+        backgroundColor: AppTheme.navBarColor, // Keep the bar white
+        selectedItemColor:
+            _getSelectedIconColor(), // This will change based on the selected tab
         unselectedItemColor: Colors.grey,
         items: [
           const BottomNavigationBarItem(
@@ -231,5 +232,22 @@ class _MainScreenState extends State<MainScreen> {
         },
       ),
     );
+  }
+
+  Color _getSelectedIconColor() {
+    switch (_currentIndex) {
+      case 0: // Friends
+        return AppTheme.blue;
+      case 1: // Messages
+        return AppTheme.green;
+      case 2: // Home
+        return Colors.purple;
+      case 3: // Profile
+        return AppTheme.coral;
+      case 4: // Settings
+        return AppTheme.orange;
+      default:
+        return AppTheme.blue;
+    }
   }
 }

@@ -1,10 +1,8 @@
 // lib/screens/profile_viewer_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import '../theme/app_theme.dart';
 import '../models/user.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class ProfileViewerScreen extends StatefulWidget {
   final String currentUserId;
@@ -23,22 +21,96 @@ class ProfileViewerScreen extends StatefulWidget {
 }
 
 class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
+  TownUser? userData; // Define the userData variable here
   bool _isLoading = true;
-  TownUser? _userData;
+  bool _hasAccessError = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserProfile();
+    _checkAccessAndLoadProfile();
+  }
+
+  Future<bool> _canViewProfile() async {
+    // The current user can always view their own profile
+    if (widget.userId == widget.currentUserId) {
+      return true;
+    }
+
+    try {
+      // First check if they are friends
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.currentUserId)
+          .get();
+
+      if (currentUserDoc.exists) {
+        final userData = currentUserDoc.data();
+        if (userData != null && userData.containsKey('friends')) {
+          final friends = userData['friends'];
+          if (friends is List) {
+            for (var friend in friends) {
+              String friendId;
+              if (friend is String) {
+                friendId = friend;
+              } else if (friend is Map) {
+                friendId = friend['id'] as String? ?? '';
+              } else {
+                continue;
+              }
+
+              if (friendId == widget.userId) {
+                // They are friends, can view profile
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      // Not friends, check if the profile is public
+      final targetUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+
+      if (targetUserDoc.exists) {
+        final targetData = targetUserDoc.data();
+        if (targetData != null) {
+          return targetData['profilePublic'] as bool? ?? true;
+        }
+      }
+
+      // Default to false if something went wrong
+      return false;
+    } catch (e) {
+      print("Error checking profile visibility: $e");
+      return false;
+    }
+  }
+
+  Future<void> _checkAccessAndLoadProfile() async {
+    setState(() {
+      _isLoading = true;
+      _hasAccessError = false;
+    });
+
+    final bool canView = await _canViewProfile();
+
+    if (canView) {
+      // Load the profile data
+      _loadUserProfile();
+    } else {
+      // Show restricted access message
+      setState(() {
+        _isLoading = false;
+        _hasAccessError = true;
+      });
+    }
   }
 
   Future<void> _loadUserProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      // Fetch user data from Firestore
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.userId)
@@ -47,7 +119,12 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
         setState(() {
-          _userData = TownUser.fromMap(data, widget.userId);
+          userData = TownUser.fromMap(data, widget.userId);
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
         });
       }
     } catch (e) {
@@ -55,10 +132,125 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading profile: $e')),
       );
-    } finally {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Widget _buildRestrictedAccessView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${widget.userName}\'s Profile is Private',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'You need to be friends to view this profile',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _sendFriendRequest,
+              icon: const Icon(Icons.person_add),
+              label: const Text('Send Friend Request'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.blue,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _sendFriendRequest() async {
+    try {
+      // Get current user name
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.currentUserId)
+          .get();
+
+      if (!currentUserDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: Your profile not found')),
+        );
+        return;
+      }
+
+      final currentUserData = currentUserDoc.data();
+      if (currentUserData == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: Your profile data not found')),
+        );
+        return;
+      }
+
+      final String currentUserName =
+          currentUserData['name'] as String? ?? 'User';
+
+      // Add to the target user's pending requests
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .update({
+        'pendingFriendRequests': FieldValue.arrayUnion([widget.currentUserId]),
+      });
+
+      // Add to the current user's sent requests
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.currentUserId)
+          .update({
+        'sentFriendRequests': FieldValue.arrayUnion([widget.userId]),
+      });
+
+      // Add notification for the target user
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('notifications')
+          .add({
+        'type': 'friendRequest',
+        'senderId': widget.currentUserId,
+        'senderName': currentUserName,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Friend request sent to ${widget.userName}')),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      print("Error sending friend request: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending friend request: $e')),
+      );
     }
   }
 
@@ -67,51 +259,41 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.userName),
+        elevation: 0,
         backgroundColor: AppTheme.coral,
         foregroundColor: Colors.white,
-        elevation: 4,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _userData == null
-              ? const Center(child: Text("User profile not found"))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Profile image and basic info in a card
-                      _buildProfileCard(),
-
-                      const SizedBox(height: 20),
-
-                      // Status message card
-                      _buildStatusCard(),
-
-                      const SizedBox(height: 20),
-
-                      // Interests card
-                      _buildInterestsCard(),
-
-                      const SizedBox(height: 20),
-
-                      // Local favorites card
-                      _buildLocalFavoritesCard(),
-
-                      const SizedBox(height: 20),
-
-                      // Personal Information Section
-                      _buildPersonalInfoCard(),
-
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
+          : _hasAccessError
+              ? _buildRestrictedAccessView()
+              : userData == null
+                  ? const Center(child: Text("Error loading profile"))
+                  : _buildProfileContent(),
     );
   }
 
+  Widget _buildProfileContent() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildProfileCard(),
+          if (userData!.statusMessage.isNotEmpty ||
+              userData!.statusEmoji.isNotEmpty)
+            _buildStatusCard(),
+          if (userData!.interests.isNotEmpty) _buildInterestsCard(),
+          if (userData!.localFavorites.isNotEmpty) _buildLocalFavoritesCard(),
+          _buildPersonalInfoCard(),
+        ],
+      ),
+    );
+  }
+
+  // Profile card with image, name, and bio
   Widget _buildProfileCard() {
     return Card(
+      margin: const EdgeInsets.all(16),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -141,10 +323,10 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
                   ],
                 ),
                 child: ClipOval(
-                  child: _userData!.profileImageUrl != null &&
-                          _userData!.profileImageUrl!.isNotEmpty
+                  child: userData!.profileImageUrl != null &&
+                          userData!.profileImageUrl!.isNotEmpty
                       ? Image.network(
-                          _userData!.profileImageUrl!,
+                          userData!.profileImageUrl!,
                           fit: BoxFit.cover,
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
@@ -163,8 +345,8 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
                               color: AppTheme.coral.withOpacity(0.2),
                               child: Center(
                                 child: Text(
-                                  _userData!.name.isNotEmpty
-                                      ? _userData!.name[0].toUpperCase()
+                                  userData!.name.isNotEmpty
+                                      ? userData!.name[0].toUpperCase()
                                       : '?',
                                   style: TextStyle(
                                     fontSize: 60,
@@ -180,8 +362,8 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
                           color: AppTheme.coral.withOpacity(0.2),
                           child: Center(
                             child: Text(
-                              _userData!.name.isNotEmpty
-                                  ? _userData!.name[0].toUpperCase()
+                              userData!.name.isNotEmpty
+                                  ? userData!.name[0].toUpperCase()
                                   : '?',
                               style: TextStyle(
                                 fontSize: 60,
@@ -199,7 +381,7 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
 
             // Name
             Text(
-              _userData!.name,
+              userData!.name,
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -209,28 +391,31 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
             const SizedBox(height: 8),
 
             // Bio
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _userData!.bio,
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.5,
+            if (userData!.bio.isNotEmpty && userData!.bio != 'No bio yet.')
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                textAlign: TextAlign.center,
+                child: Text(
+                  userData!.bio,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
-            ),
           ],
         ),
       ),
     );
   }
 
+  // Status card with emoji and message
   Widget _buildStatusCard() {
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -261,64 +446,38 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
               ],
             ),
             const Divider(),
-            if (_userData!.statusMessage.isEmpty &&
-                _userData!.statusEmoji.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'No status set',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                children: [
+                  if (userData!.statusEmoji.isNotEmpty)
+                    Text(
+                      userData!.statusEmoji,
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      userData!.statusMessage,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Row(
-                  children: [
-                    if (_userData!.statusEmoji.isNotEmpty)
-                      Text(
-                        _userData!.statusEmoji,
-                        style: const TextStyle(fontSize: 28),
-                      ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _userData!.statusMessage,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Updated ${timeago.format(_userData!.statusUpdatedAt)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  // Interests card with chips
   Widget _buildInterestsCard() {
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -349,63 +508,40 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
               ],
             ),
             const Divider(),
-            if (_userData!.interests.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'No interests added',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _userData!.interests.map((interest) {
-                    final colorIndex =
-                        interest.hashCode % AppTheme.squareColors.length;
-                    final color = AppTheme.squareColors[colorIndex];
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: userData!.interests.map((interest) {
+                  final colorIndex =
+                      interest.hashCode % AppTheme.squareColors.length;
+                  final color = AppTheme.squareColors[colorIndex];
 
-                    return Chip(
-                      backgroundColor: color.withOpacity(0.2),
-                      side: BorderSide(color: color, width: 1),
-                      avatar: CircleAvatar(
-                        backgroundColor: color,
-                        child: Text(
-                          interest[0].toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                  return Chip(
+                    backgroundColor: color.withOpacity(0.2),
+                    side: BorderSide(color: color, width: 1),
+                    label: Text(
+                      interest,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
                       ),
-                      label: Text(
-                        interest,
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                    ),
+                  );
+                }).toList(),
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
+  // Local favorites card with places
   Widget _buildLocalFavoritesCard() {
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -436,150 +572,58 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
               ],
             ),
             const Divider(),
-            if (_userData!.localFavorites.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'No local favorites added',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 16,
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: userData!.localFavorites.map((favorite) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        favorite.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        favorite.formattedAddress,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      if (favorite.recommendation.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            '"${favorite.recommendation}"',
+                            style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[800],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      if (userData!.localFavorites.last != favorite)
+                        const Divider(height: 16),
+                    ],
                   ),
-                ),
-              )
-            else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Map with all favorites
-                  SizedBox(
-                    height: 180,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: _buildFavoritesMap(_userData!.localFavorites),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // List of favorites with recommendations
-                  ..._userData!.localFavorites
-                      .map((favorite) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Place name in bold
-                              Text(
-                                favorite.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-
-                              // Address in lighter grey
-                              Text(
-                                favorite.formattedAddress,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-
-                              // Recommendation in italics with quote marks
-                              if (favorite.recommendation.isNotEmpty)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(top: 6, bottom: 6),
-                                  child: Text(
-                                    '"${favorite.recommendation}"',
-                                    style: TextStyle(
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.grey[800],
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ),
-
-                              // Divider between items
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8.0),
-                                child: Divider(height: 1),
-                              ),
-                            ],
-                          ))
-                      .toList(),
-                ],
-              ),
+                );
+              }).toList(),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFavoritesMap(List<LocalFavorite> favorites) {
-    if (favorites.isEmpty) return Container();
-
-    // Create a list of markers from favorites
-    final Set<Marker> markers = favorites.map((favorite) {
-      return Marker(
-        markerId: MarkerId(favorite.id),
-        position: LatLng(favorite.latitude, favorite.longitude),
-        infoWindow: InfoWindow(title: favorite.name),
-      );
-    }).toSet();
-
-    // Calculate bounds to fit all markers
-    double? minLat, maxLat, minLng, maxLng;
-    for (final favorite in favorites) {
-      if (minLat == null || favorite.latitude < minLat)
-        minLat = favorite.latitude;
-      if (maxLat == null || favorite.latitude > maxLat)
-        maxLat = favorite.latitude;
-      if (minLng == null || favorite.longitude < minLng)
-        minLng = favorite.longitude;
-      if (maxLng == null || favorite.longitude > maxLng)
-        maxLng = favorite.longitude;
-    }
-
-    // Add padding to bounds
-    minLat = minLat! - 0.01;
-    maxLat = maxLat! + 0.01;
-    minLng = minLng! - 0.01;
-    maxLng = maxLng! + 0.01;
-
-    // Center position
-    final centerLat = (minLat + maxLat) / 2;
-    final centerLng = (minLng + maxLng) / 2;
-
-    return GoogleMap(
-      initialCameraPosition: CameraPosition(
-        target: LatLng(centerLat, centerLng),
-        zoom: 12,
-      ),
-      markers: markers,
-      myLocationEnabled: false,
-      zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
-      onMapCreated: (controller) {
-        // Fit bounds when map is created
-        controller.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(minLat!, minLng!),
-              northeast: LatLng(maxLat!, maxLng!),
-            ),
-            50, // padding
-          ),
-        );
-      },
-    );
-  }
-
+  // Personal information card
   Widget _buildPersonalInfoCard() {
     return Card(
+      margin: const EdgeInsets.all(16),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -597,13 +641,14 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
               ),
             ),
             const Divider(),
-            _buildInfoItem(Icons.cake, 'Age', _userData!.age.toString()),
-            _buildInfoItem(Icons.person, 'Relationship Status',
-                _userData!.relationshipStatus),
+            userData!.birthDate != null
+                ? _buildInfoItem(Icons.cake, 'Age', '${userData!.age} years')
+                : _buildInfoItem(Icons.cake, 'Age', 'Not specified'),
+            _buildInfoItem(Icons.favorite, 'Relationship Status',
+                userData!.relationshipStatus),
             _buildInfoItem(
-                Icons.person, 'Current City', _userData!.currentCity),
-            _buildInfoItem(
-                Icons.location_city, 'Hometown', _userData!.hometown),
+                Icons.location_city, 'Current City', userData!.currentCity),
+            _buildInfoItem(Icons.home, 'Hometown', userData!.hometown),
           ],
         ),
       ),

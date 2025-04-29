@@ -68,6 +68,7 @@ class TownUser {
       friends; // Updated to include more friend info
   final List<String> pendingFriendRequests; // Friend requests received
   final List<String> sentFriendRequests; // Friend requests sent
+  final bool profilePublic;
 
   TownUser({
     required this.id,
@@ -89,6 +90,7 @@ class TownUser {
     this.friends = const [],
     this.pendingFriendRequests = const [],
     this.sentFriendRequests = const [],
+    this.profilePublic = true, // Default to public
   }) : statusUpdatedAt = statusUpdatedAt ?? DateTime.now();
 
   // Calculate age based on birthDate
@@ -129,6 +131,7 @@ class TownUser {
       'friends': friends,
       'pendingFriendRequests': pendingFriendRequests,
       'sentFriendRequests': sentFriendRequests,
+      'profilePublic': profilePublic,
     };
   }
 
@@ -208,6 +211,7 @@ class TownUser {
     List<Map<String, dynamic>>? friends,
     List<String>? pendingFriendRequests,
     List<String>? sentFriendRequests,
+    bool? profilePublic,
   }) {
     return TownUser(
       id: this.id,
@@ -231,6 +235,7 @@ class TownUser {
       pendingFriendRequests:
           pendingFriendRequests ?? this.pendingFriendRequests,
       sentFriendRequests: sentFriendRequests ?? this.sentFriendRequests,
+      profilePublic: profilePublic ?? this.profilePublic,
     );
   }
 }

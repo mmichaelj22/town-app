@@ -186,7 +186,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
             if (data == null) continue;
 
             // Skip users who have undetectable mode enabled
-            // *** This is the key change to respect undetectable mode ***
             if (data.containsKey('undetectable') &&
                 data['undetectable'] == true) {
               continue; // Skip this user - they are in undetectable mode
@@ -211,6 +210,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
             if (data.containsKey('profileImageUrl')) {
               profileImageUrl = data['profileImageUrl'] as String? ?? '';
             }
+
+            // Get profile visibility setting
+            bool profilePublic = data.containsKey('profilePublic')
+                ? data['profilePublic'] as bool? ?? true
+                : true;
 
             // Check if this is a friend
             bool isFriend = _friends.any((friend) => friend['id'] == userId);
@@ -237,6 +241,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 'isFriend': isFriend,
                 'hasPendingRequest': hasPendingRequest,
                 'hasSentRequest': hasSentRequest,
+                'profilePublic': profilePublic, // Add this new field
               });
             }
           } catch (e) {
@@ -260,31 +265,75 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final bool hasPendingRequest = user['hasPendingRequest'];
     final bool hasSentRequest = user['hasSentRequest'];
 
-    ProfileActionMenu.show(
-      context: context,
-      currentUserId: widget.userId,
-      userId: userId,
-      userName: name,
-      isFriend: isFriend,
-      hasSentRequest: hasSentRequest,
-      hasReceivedRequest: hasPendingRequest,
-      onFriendRequestSent: () {
-        setState(() {
-          _sentFriendRequests.add(userId);
-        });
-      },
-      onFriendRequestAccepted: () {
-        setState(() {
-          _pendingFriendRequests.remove(userId);
-          _friends.add({'id': userId, 'name': name});
-        });
-      },
-      onUserBlocked: () {
-        setState(() {
-          _blockedUsers.add(userId);
-        });
-      },
-    );
+    // First, check if the user is a friend or has a public profile
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .get()
+        .then((userDoc) {
+      final userData = userDoc.data();
+      final bool profilePublic =
+          userData != null ? userData['profilePublic'] ?? true : true;
+
+      // User can view profile if they are friends or if the profile is public
+      final bool canViewProfile = isFriend || profilePublic;
+
+      ProfileActionMenu.show(
+        context: context,
+        currentUserId: widget.userId,
+        userId: userId,
+        userName: name,
+        isFriend: isFriend,
+        hasSentRequest: hasSentRequest,
+        hasReceivedRequest: hasPendingRequest,
+        canViewProfile: canViewProfile, // Pass this new parameter
+        onFriendRequestSent: () {
+          setState(() {
+            _sentFriendRequests.add(userId);
+          });
+        },
+        onFriendRequestAccepted: () {
+          setState(() {
+            _pendingFriendRequests.remove(userId);
+            _friends.add({'id': userId, 'name': name});
+          });
+        },
+        onUserBlocked: () {
+          setState(() {
+            _blockedUsers.add(userId);
+          });
+        },
+      );
+    }).catchError((e) {
+      print("Error getting user profile visibility: $e");
+      // If there's an error, default to only showing profile for friends
+      ProfileActionMenu.show(
+        context: context,
+        currentUserId: widget.userId,
+        userId: userId,
+        userName: name,
+        isFriend: isFriend,
+        hasSentRequest: hasSentRequest,
+        hasReceivedRequest: hasPendingRequest,
+        canViewProfile: isFriend, // Default to only friends can view
+        onFriendRequestSent: () {
+          setState(() {
+            _sentFriendRequests.add(userId);
+          });
+        },
+        onFriendRequestAccepted: () {
+          setState(() {
+            _pendingFriendRequests.remove(userId);
+            _friends.add({'id': userId, 'name': name});
+          });
+        },
+        onUserBlocked: () {
+          setState(() {
+            _blockedUsers.add(userId);
+          });
+        },
+      );
+    });
   }
 
   @override

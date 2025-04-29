@@ -11,6 +11,7 @@ import 'local_favorites_screen.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -24,17 +25,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   TownUser? userData;
   bool isLoading = true;
   final ValueNotifier<bool> _isMapReady = ValueNotifier<bool>(false);
+  late StreamSubscription<DocumentSnapshot> _userSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _requestLocationPermission(); // Add this line
+    // Add this listener for real-time updates to profile visibility
+    _userSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .snapshots()
+        .listen((docSnapshot) {
+      if (docSnapshot.exists) {
+        final data = docSnapshot.data() as Map<String, dynamic>;
+        setState(() {
+          userData = TownUser.fromMap(data, userId);
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
-    // Clean up any controllers or resources here
+    // Cancel the subscription when the widget is disposed
+    _userSubscription.cancel();
     super.dispose();
   }
 
@@ -110,7 +126,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             children: [
                               // Profile image and basic info in a card
                               _buildProfileCard(),
+                              const SizedBox(height: 12),
 
+                              // Public/Private indicator
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: userData!.profilePublic
+                                      ? AppTheme.green.withOpacity(0.1)
+                                      : AppTheme.coral.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: userData!.profilePublic
+                                        ? AppTheme.green
+                                        : AppTheme.coral,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      userData!.profilePublic
+                                          ? Icons.public
+                                          : Icons.lock,
+                                      size: 16,
+                                      color: userData!.profilePublic
+                                          ? AppTheme.green
+                                          : AppTheme.coral,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      userData!.profilePublic
+                                          ? "Your Profile is Public!"
+                                          : "Your Profile is Private",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        color: userData!.profilePublic
+                                            ? AppTheme.green
+                                            : AppTheme.coral,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               const SizedBox(height: 20),
 
                               // Status message card

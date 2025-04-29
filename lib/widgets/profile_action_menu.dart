@@ -13,6 +13,7 @@ class ProfileActionMenu extends StatelessWidget {
   final bool isFriend;
   final bool hasSentRequest;
   final bool hasReceivedRequest;
+  final bool canViewProfile; // Add this new property
   final Function? onFriendRequestSent;
   final Function? onFriendRequestAccepted;
   final Function? onUserBlocked;
@@ -25,6 +26,7 @@ class ProfileActionMenu extends StatelessWidget {
     this.isFriend = false,
     this.hasSentRequest = false,
     this.hasReceivedRequest = false,
+    this.canViewProfile = false, // Default to false for safety
     this.onFriendRequestSent,
     this.onFriendRequestAccepted,
     this.onUserBlocked,
@@ -39,6 +41,7 @@ class ProfileActionMenu extends StatelessWidget {
     bool isFriend = false,
     bool hasSentRequest = false,
     bool hasReceivedRequest = false,
+    bool canViewProfile = false, // Add this parameter
     Function? onFriendRequestSent,
     Function? onFriendRequestAccepted,
     Function? onUserBlocked,
@@ -55,6 +58,7 @@ class ProfileActionMenu extends StatelessWidget {
         isFriend: isFriend,
         hasSentRequest: hasSentRequest,
         hasReceivedRequest: hasReceivedRequest,
+        canViewProfile: canViewProfile, // Pass the parameter
         onFriendRequestSent: onFriendRequestSent,
         onFriendRequestAccepted: onFriendRequestAccepted,
         onUserBlocked: onUserBlocked,
@@ -135,7 +139,7 @@ class ProfileActionMenu extends StatelessWidget {
   Widget _buildFriendOptions(BuildContext context) {
     return Column(
       children: [
-        // View Profile option
+        // View Profile option - always show for friends
         _buildOptionTile(
           context: context,
           icon: Icons.person,
@@ -175,6 +179,28 @@ class ProfileActionMenu extends StatelessWidget {
   Widget _buildNearbyOptions(BuildContext context) {
     return Column(
       children: [
+        // View Profile option - only show if profile is public or user is a friend
+        if (canViewProfile)
+          _buildOptionTile(
+            context: context,
+            icon: Icons.person,
+            iconColor: AppTheme.blue,
+            title: 'View Profile',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileViewerScreen(
+                    currentUserId: currentUserId,
+                    userId: userId,
+                    userName: userName,
+                  ),
+                ),
+              );
+            },
+          ),
+
         // Send Friend Request option
         if (!isFriend && !hasSentRequest && !hasReceivedRequest)
           _buildOptionTile(
