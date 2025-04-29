@@ -9,7 +9,6 @@ import 'status_editor_screen.dart';
 import 'interests_editor_screen.dart';
 import 'local_favorites_screen.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'place_picker_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -84,9 +83,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     // If userData is loaded but has no favorites, add test data
-    if (!isLoading && userData != null) {
-      _addTestFavoritesIfNeeded();
-    }
+    if (!isLoading && userData != null) {}
 
     return Scaffold(
       body: isLoading
@@ -621,34 +618,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // List of favorites with recommendations
                   ...userData!.localFavorites
-                      .map((favorite) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  favorite.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
+                      .map((favorite) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Place name in bold
+                              Text(
+                                favorite.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
                                 ),
-                                if (favorite.recommendation.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      '"${favorite.recommendation}"',
-                                      style: TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.grey[700],
-                                        fontSize: 14,
-                                      ),
+                              ),
+                              const SizedBox(height: 4),
+
+                              // Address in lighter grey
+                              Text(
+                                favorite.formattedAddress,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+
+                              // Recommendation in italics with quote marks
+                              if (favorite.recommendation.isNotEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(top: 6, bottom: 6),
+                                  child: Text(
+                                    '"${favorite.recommendation}"',
+                                    style: TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.grey[800],
+                                      fontSize: 15,
                                     ),
                                   ),
-                                const SizedBox(height: 4),
-                                const Divider(height: 8),
-                              ],
-                            ),
+                                ),
+
+                              // Divider between items
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Divider(height: 1),
+                              ),
+                            ],
                           ))
                       .toList(),
                 ],
@@ -900,53 +912,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-  }
-
-  // In your profile_screen.dart, add this method to insert test data if no favorites exist
-
-  void _addTestFavoritesIfNeeded() {
-    if (userData != null && userData!.localFavorites.isEmpty) {
-      print("No favorites found, adding test data for map display");
-
-      // Create some test locations (New York landmarks)
-      final testFavorites = [
-        LocalFavorite(
-          id: 'test1',
-          name: 'Central Park',
-          placeId: 'ChIJ4zGFAZpYwokRGUGph3Mf37k',
-          latitude: 40.7812,
-          longitude: -73.9665,
-          formattedAddress: 'Central Park, New York, NY',
-          recommendation: 'Great for walking and relaxing',
-        ),
-        LocalFavorite(
-          id: 'test2',
-          name: 'Empire State Building',
-          placeId: 'ChIJaXQRs6lZwokRY6EFpJnhNNE',
-          latitude: 40.7484,
-          longitude: -73.9857,
-          formattedAddress: '20 W 34th St, New York, NY 10001',
-          recommendation: 'Amazing views from the top!',
-        ),
-        LocalFavorite(
-          id: 'test3',
-          name: 'Times Square',
-          placeId: 'ChIJmQJIxlVYwokRLgeuocVOGVU',
-          latitude: 40.7580,
-          longitude: -73.9855,
-          formattedAddress: 'Times Square, New York, NY 10036',
-          recommendation: 'Vibrant at night with all the lights',
-        ),
-      ];
-
-      // This is only for testing the map display - NOT saving to database
-      setState(() {
-        // Create a copy of userData with test favorites
-        userData = userData!.copyWith(
-          localFavorites: testFavorites,
-        );
-      });
-    }
   }
 
 // Call this method in build() or after loading user data:

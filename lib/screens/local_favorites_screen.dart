@@ -8,7 +8,6 @@ import '../theme/app_theme.dart';
 import 'place_picker_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:uuid/uuid.dart';
 
 class LocalFavoritesScreen extends StatefulWidget {
   final String userId;
@@ -28,33 +27,9 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
   List<LocalFavorite> _favorites = [];
   bool _isSubmitting = false;
   final int _maxFavorites = 5;
-
-  // Controllers for the add/edit favorite form
-  // final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final ValueNotifier<bool> _isMapReady = ValueNotifier(false);
-  // String _selectedType = 'Restaurant';
-  // bool _useCurrentLocation = true;
-  // double? _latitude;
-  // double? _longitude;
-  // bool _isAddingFavorite = false;
-  // int? _editingIndex;
-
-  // Available place types
-  // final List<String> _placeTypes = [
-  //   'Restaurant',
-  //   'Coffee Shop',
-  //   'Bar',
-  //   'Park',
-  //   'Museum',
-  //   'Shopping',
-  //   'Gym',
-  //   'Library',
-  //   'Theater',
-  //   'Beach',
-  //   'Other',
-  // ];
 
   @override
   void initState() {
@@ -208,48 +183,50 @@ class _LocalFavoritesScreenState extends State<LocalFavoritesScreen> {
 
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 12),
-                                child: ListTile(
-                                  title: Text(
-                                    favorite.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Header with name and edit/delete buttons
+                                    ListTile(
+                                      title: Text(
+                                        favorite.name,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                      subtitle: Text(
                                         favorite.formattedAddress,
                                         style: const TextStyle(fontSize: 12),
                                       ),
-                                      if (favorite.recommendation.isNotEmpty)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(top: 4),
-                                          child: Text(
-                                            '"${favorite.recommendation}"',
-                                            style: TextStyle(
-                                              fontStyle: FontStyle.italic,
-                                              color: Colors.grey[700],
-                                            ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit),
+                                            onPressed: () =>
+                                                _editFavorite(index),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete),
+                                            onPressed: () =>
+                                                _confirmDeleteFavorite(index),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Only show recommendation if it exists
+                                    if (favorite.recommendation.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            16, 0, 16, 16),
+                                        child: Text(
+                                          '"${favorite.recommendation}"',
+                                          style: TextStyle(
+                                            fontStyle: FontStyle.italic,
+                                            color: Colors.grey[700],
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit),
-                                        onPressed: () => _editFavorite(index),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete),
-                                        onPressed: () =>
-                                            _confirmDeleteFavorite(index),
-                                      ),
-                                    ],
-                                  ),
+                                  ],
                                 ),
                               );
                             }).toList(),

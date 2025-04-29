@@ -466,34 +466,49 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
 
                   // List of favorites with recommendations
                   ..._userData!.localFavorites
-                      .map((favorite) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  favorite.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
+                      .map((favorite) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Place name in bold
+                              Text(
+                                favorite.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
                                 ),
-                                if (favorite.recommendation.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      '"${favorite.recommendation}"',
-                                      style: TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.grey[700],
-                                        fontSize: 14,
-                                      ),
+                              ),
+                              const SizedBox(height: 4),
+
+                              // Address in lighter grey
+                              Text(
+                                favorite.formattedAddress,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+
+                              // Recommendation in italics with quote marks
+                              if (favorite.recommendation.isNotEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(top: 6, bottom: 6),
+                                  child: Text(
+                                    '"${favorite.recommendation}"',
+                                    style: TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.grey[800],
+                                      fontSize: 15,
                                     ),
                                   ),
-                                const SizedBox(height: 4),
-                                const Divider(height: 8),
-                              ],
-                            ),
+                                ),
+
+                              // Divider between items
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Divider(height: 1),
+                              ),
+                            ],
                           ))
                       .toList(),
                 ],
@@ -561,34 +576,6 @@ class _ProfileViewerScreenState extends State<ProfileViewerScreen> {
         );
       },
     );
-  }
-
-  // Helper method to get appropriate icon based on favorite type
-  IconData _getIconForFavoriteType(String type) {
-    switch (type.toLowerCase()) {
-      case 'restaurant':
-        return Icons.restaurant;
-      case 'coffee shop':
-        return Icons.coffee;
-      case 'bar':
-        return Icons.local_bar;
-      case 'park':
-        return Icons.park;
-      case 'museum':
-        return Icons.museum;
-      case 'shopping':
-        return Icons.shopping_bag;
-      case 'gym':
-        return Icons.fitness_center;
-      case 'library':
-        return Icons.local_library;
-      case 'theater':
-        return Icons.theaters;
-      case 'beach':
-        return Icons.beach_access;
-      default:
-        return Icons.place;
-    }
   }
 
   Widget _buildPersonalInfoCard() {
